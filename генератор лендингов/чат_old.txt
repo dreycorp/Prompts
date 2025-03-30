@@ -1,0 +1,1716 @@
+### Техническое задание на разработку плагина для Winter CMS
+
+**Цель:**
+Разработка плагина для управления одностраничными лендингами с возможностью A/B тестирования и управления брендированием.
+
+**Требования:**
+
+1. **Управление брендированием:**
+   - Общие настройки для всех лендингов.
+   - Загрузка логотипа сайта и фавикона (png, ico).
+   - Вставка логотипа и фавикона в шаблоны.
+   - Возможность подключения аналитических сервисов (Google Analytics, Яндекс.Метрика и т.д.) через настройку JavaScript кода.
+
+2. **Создание и управление лендингами:**
+   - Создание страниц с выбором списка и порядка блоков.
+   - Начальные параметры для каждого блока.
+   - Возможность редактирования контента блоков через админ-панель.
+   - Предварительный просмотр страниц перед публикацией.
+   - Создание и редактирование шаблонов блоков, хранящихся в `partials/blocks/template/*.htm`.
+   - Возможность создания новых блоков для конкретного лендинга на основе шаблонов или пустых блоков.
+
+3. **A/B тестирование:**
+   - Настройка A/B тестов через визуальный интерфейс.
+   - Подробная статистика: количество просмотров, конверсии по кнопкам, время на странице.
+   - Интерфейс для просмотра и анализа результатов тестов.
+   - Автоматическое определение победителя теста.
+   - Компонент для обработки запросов и проведения тестов.
+
+4. **SEO настройки:**
+   - Настройка meta-тегов, Open Graph для каждой страницы.
+   - Возможность добавления канонических ссылок.
+
+5. **Интеграция с аналитическими сервисами:**
+   - Поддержка интеграций с Google Analytics, Яндекс.Метрика и другими популярными аналитическими сервисами через JavaScript коды, подключаемые в настройках.
+
+### Шаги по созданию плагина:
+
+1. **Установка и настройка плагина Builder:**
+   - Создайте новый плагин и настройте основные параметры.
+
+2. **Создание моделей и миграций:**
+   - Создайте модели для хранения информации о страницах, блоках, A/B тестах и брендировании.
+   - Настройте миграции для создания необходимых таблиц в базе данных.
+
+3. **Разработка интерфейсов управления:**
+   - **Настройки брендирования:**
+     - Создайте интерфейс для загрузки логотипа и фавикона.
+     - Добавьте возможность ввода JavaScript кодов аналитических сервисов.
+   - **Создание и управление лендингами:**
+     - Создайте интерфейс для создания и редактирования страниц лендингов.
+     - Обеспечьте возможность выбора и настройки блоков для каждой страницы.
+     - Добавьте функцию предварительного просмотра.
+     - Создайте интерфейс для выбора шаблонов блоков из `partials/blocks/template/*.htm`.
+   - **A/B тестирование:**
+     - Разработайте интерфейс для настройки A/B тестов.
+     - Создайте страницу для просмотра и анализа статистики тестов.
+
+4. **Интеграция с шаблонами:**
+   - Добавьте возможность вставки логотипа и фавикона в шаблоны страниц.
+   - Обеспечьте возможность выбора и настройки блоков для каждой страницы.
+
+5. **Тестирование и отладка:**
+   - Проведите тестирование всех функций плагина.
+   - Исправьте обнаруженные ошибки и улучшите производительность.
+
+6. **Документация и обучение:**
+   - Создайте подробную документацию по использованию плагина.
+   - Обучите владельца сайта работе с плагином и его настройками.
+
+### Пример структуры базы данных:
+
+1. **Таблица `brand_settings`:**
+   - id
+   - logo_path
+   - favicon_path
+   - analytics_js_code
+
+2. **Таблица `landing_pages`:**
+   - id
+   - title
+   - meta_title
+   - meta_description
+   - url
+   - layout
+   - is_hidden
+
+3. **Таблица `blocks`:**
+   - id
+   - landing_page_id
+   - block_type
+   - block_content
+   - order
+
+4. **Таблица `ab_tests`:**
+   - id
+   - landing_page_id
+   - test_name
+   - variant_a_id
+   - variant_b_id
+   - start_date
+   - end_date
+
+5. **Таблица `ab_test_results`:**
+   - id
+   - ab_test_id
+   - variant_id
+   - views
+   - clicks
+   - conversions
+   - time_on_page
+   
+----
+
+// plugins/dreycorp/landingmanager/components/landingpage/default.htm
+{% if landingPage %}
+    <h1>{{ landingPage.title }}</h1>
+
+    <img src="{{ brandSettings.logo_path | media }}" alt="Logo">
+
+    {% for block in landingPage.blocks.sortBy('order') %}
+        {% partial 'blocks/' ~ landingPage.id ~ '/block-' ~ block.id %}
+    {% endfor %}
+
+{% else %}
+    <p>Landing page not found.</p>
+{% endif %}
+
+// plugins/dreycorp/landingmanager/components/LandingPage.php
+<?php namespace Dreycorp\Landingmanager\Components;
+
+use Cms\Classes\ComponentBase;
+use Illuminate\Support\Facades\Request;
+use Dreycorp\Landingmanager\Models\BrandSetting;
+use Dreycorp\Landingmanager\Models\LandingPage as LandingPageModel;
+
+class LandingPage extends ComponentBase
+{
+    public $landingPage;
+    public $brandSettings;
+
+    public function componentDetails()
+    {
+        return [
+            'name'        => 'Landing Page',
+            'description' => 'Displays a landing page'
+        ];
+    }
+
+    public function getAssets()
+    {
+        return json_decode($this->landingPage->assets, true);
+    }
+
+    public function defineProperties()
+    {
+        return [];
+    }
+    
+    public function onRun()
+    {
+        $currentUrl = Request::path();
+        $this->page['landingPage'] = LandingPageModel::with(['blocks' => function ($query) {
+            $query->orderBy('order', 'asc');
+        }])->where('url', $currentUrl)->firstOrFail();
+        
+        $this->page['brandSettings'] = BrandSetting::find(1);
+    
+        if ($this->page['landingPage']) {
+            $this->page['title'] = $this->page['landingPage']->meta_title?: $this->page['landingPage']->title;
+            $this->page['assets'] = $this->page['landingPage']->assets;
+            $this->page['assetsUrl'] = "/storage/app/media/".$this->page['landingPage']->url."/";
+            //... other meta tags
+        }
+
+        
+    }
+    
+}
+
+// plugins/dreycorp/landingmanager/controllers/abtests/config_form.yaml
+name: AbTests
+form: $/dreycorp/landingmanager/models/abtest/fields.yaml
+modelClass: Dreycorp\Landingmanager\Models\AbTest
+defaultRedirect: dreycorp/landingmanager/abtests
+create:
+    redirect: 'dreycorp/landingmanager/abtests/update/:id'
+    redirectClose: dreycorp/landingmanager/abtests
+update:
+    redirect: dreycorp/landingmanager/abtests
+    redirectClose: dreycorp/landingmanager/abtests
+
+// plugins/dreycorp/landingmanager/controllers/abtests/config_list.yaml
+list: $/dreycorp/landingmanager/models/abtest/columns.yaml
+modelClass: Dreycorp\Landingmanager\Models\AbTest
+title: AbTests
+noRecordsMessage: 'backend::lang.list.no_records'
+showSetup: true
+showCheckboxes: true
+recordsPerPage: 20
+toolbar:
+    buttons: list_toolbar
+    search:
+        prompt: 'backend::lang.list.search_prompt'
+recordUrl: 'dreycorp/landingmanager/abtests/update/:id'
+
+// plugins/dreycorp/landingmanager/controllers/abtests/create.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/abtests') ?>">AbTests</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.create')) ?>
+                </button>
+                <button 
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.create_and_close')) ?>
+                </button>
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/landingmanager/abtests') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/landingmanager/abtests') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/landingmanager/controllers/abtests/index.htm
+<?= $this->listRender() ?>
+
+// plugins/dreycorp/landingmanager/controllers/abtests/preview.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/abtests') ?>">AbTests</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <div class="form-preview">
+        <?= $this->formRenderPreview() ?>
+    </div>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e($this->fatalError) ?></p>
+<?php endif ?>
+
+<p>
+    <a href="<?= Backend::url('dreycorp/landingmanager/abtests') ?>" class="btn btn-default oc-icon-chevron-left">
+        <?= e(trans('backend::lang.form.return_to_list')) ?>
+    </a>
+</p>
+
+// plugins/dreycorp/landingmanager/controllers/abtests/update.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/abtests') ?>">AbTests</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-request-data="redirect:0"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.save')) ?>
+                </button>
+                <button
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.save_and_close')) ?>
+                </button>
+                <button
+                    type="button"
+                    class="oc-icon-trash-o btn-icon danger pull-right"
+                    data-request="onDelete"
+                    data-load-indicator="<?= e(trans('backend::lang.form.deleting')) ?>"
+                    data-request-confirm="<?= e(trans('backend::lang.form.confirm_delete')) ?>">
+                </button>
+
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/landingmanager/abtests') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/landingmanager/abtests') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/landingmanager/controllers/abtests/_list_toolbar.htm
+<div data-control="toolbar">
+        <a href="<?= Backend::url('dreycorp/landingmanager/abtests/create') ?>" class="btn btn-primary oc-icon-plus"><?= e(trans('backend::lang.form.create')) ?></a>
+            <button
+        class="btn btn-default oc-icon-trash-o"
+        disabled="disabled"
+        onclick="$(this).data('request-data', {
+            checked: $('.control-list').listWidget('getChecked')
+        })"
+        data-request="onDelete"
+        data-request-confirm="<?= e(trans('backend::lang.list.delete_selected_confirm')) ?>"
+        data-trigger-action="enable"
+        data-trigger=".control-list input[type=checkbox]"
+        data-trigger-condition="checked"
+        data-request-success="$(this).prop('disabled', true)"
+        data-stripe-load-indicator>
+        <?= e(trans('backend::lang.list.delete_selected')) ?>
+    </button>
+</div>
+
+// plugins/dreycorp/landingmanager/controllers/AbTests.php
+<?php namespace Dreycorp\Landingmanager\Controllers;
+
+use Backend\Classes\Controller;
+use BackendMenu;
+
+class AbTests extends Controller
+{
+    public $implement = [        'Backend\Behaviors\ListController',        'Backend\Behaviors\FormController'    ];
+    
+    public $listConfig = 'config_list.yaml';
+    public $formConfig = 'config_form.yaml';
+
+    public function __construct()
+    {
+        parent::__construct();
+        BackendMenu::setContext('Dreycorp.Landingmanager', 'main-menu-item', 'side-menu-item3');
+    }
+}
+
+// plugins/dreycorp/landingmanager/controllers/blocks/config_form.yaml
+name: Blocks
+form: $/dreycorp/landingmanager/models/block/fields.yaml
+modelClass: Dreycorp\Landingmanager\Models\Block
+defaultRedirect: dreycorp/landingmanager/blocks
+create:
+    redirect: 'dreycorp/landingmanager/blocks/update/:id'
+    redirectClose: dreycorp/landingmanager/blocks
+update:
+    redirect: dreycorp/landingmanager/blocks
+    redirectClose: dreycorp/landingmanager/blocks
+
+// plugins/dreycorp/landingmanager/controllers/blocks/config_list.yaml
+list: $/dreycorp/landingmanager/models/block/columns.yaml
+modelClass: Dreycorp\Landingmanager\Models\Block
+title: Blocks
+noRecordsMessage: 'backend::lang.list.no_records'
+showSetup: true
+showCheckboxes: true
+recordsPerPage: 20
+toolbar:
+    buttons: list_toolbar
+    search:
+        prompt: 'backend::lang.list.search_prompt'
+recordUrl: 'dreycorp/landingmanager/blocks/update/:id'
+
+// plugins/dreycorp/landingmanager/controllers/blocks/config_reorder.yaml
+title: Blocks
+modelClass: Dreycorp\Landingmanager\Models\Block
+toolbar:
+    buttons: reorder_toolbar
+
+// plugins/dreycorp/landingmanager/controllers/blocks/create.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>">Blocks</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.create')) ?>
+                </button>
+                <button 
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.create_and_close')) ?>
+                </button>
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/landingmanager/controllers/blocks/index.htm
+<?= $this->listRender() ?>
+
+// plugins/dreycorp/landingmanager/controllers/blocks/preview.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>">Blocks</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <div class="form-preview">
+        <?= $this->formRenderPreview() ?>
+    </div>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e($this->fatalError) ?></p>
+<?php endif ?>
+
+<p>
+    <a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>" class="btn btn-default oc-icon-chevron-left">
+        <?= e(trans('backend::lang.form.return_to_list')) ?>
+    </a>
+</p>
+
+// plugins/dreycorp/landingmanager/controllers/blocks/reorder.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>">Blocks</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?= $this->reorderRender() ?>
+
+// plugins/dreycorp/landingmanager/controllers/blocks/update.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>">Blocks</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-request-data="redirect:0"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.save')) ?>
+                </button>
+                <button
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.save_and_close')) ?>
+                </button>
+                <button
+                    type="button"
+                    class="oc-icon-trash-o btn-icon danger pull-right"
+                    data-request="onDelete"
+                    data-load-indicator="<?= e(trans('backend::lang.form.deleting')) ?>"
+                    data-request-confirm="<?= e(trans('backend::lang.form.confirm_delete')) ?>">
+                </button>
+
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/landingmanager/controllers/blocks/_list_toolbar.htm
+<div data-control="toolbar">
+        <a href="<?= Backend::url('dreycorp/landingmanager/blocks/create') ?>" class="btn btn-primary oc-icon-plus"><?= e(trans('backend::lang.form.create')) ?></a>
+            <a href="<?= Backend::url('dreycorp/landingmanager/blocks/reorder') ?>" class="btn btn-default oc-icon-list"><?= e(trans('backend::lang.reorder.default_title')) ?></a>
+        <button
+        class="btn btn-default oc-icon-trash-o"
+        disabled="disabled"
+        onclick="$(this).data('request-data', {
+            checked: $('.control-list').listWidget('getChecked')
+        })"
+        data-request="onDelete"
+        data-request-confirm="<?= e(trans('backend::lang.list.delete_selected_confirm')) ?>"
+        data-trigger-action="enable"
+        data-trigger=".control-list input[type=checkbox]"
+        data-trigger-condition="checked"
+        data-request-success="$(this).prop('disabled', true)"
+        data-stripe-load-indicator>
+        <?= e(trans('backend::lang.list.delete_selected')) ?>
+    </button>
+</div>
+
+// plugins/dreycorp/landingmanager/controllers/blocks/_reorder_toolbar.htm
+<div data-control="toolbar">
+    <a href="<?= Backend::url('dreycorp/landingmanager/blocks') ?>" class="btn btn-primary oc-icon-caret-left"><?= e(trans('backend::lang.form.return_to_list')) ?></a>
+</div>
+
+// plugins/dreycorp/landingmanager/controllers/Blocks.php
+<?php namespace Dreycorp\Landingmanager\Controllers;
+
+use BackendMenu;
+use Illuminate\Http\Request;
+use Backend\Classes\Controller;
+
+class Blocks extends Controller
+{
+    public $implement = [        'Backend\Behaviors\ListController',        'Backend\Behaviors\FormController',        'Backend\Behaviors\ReorderController'    ];
+    
+    public $listConfig = 'config_list.yaml';
+    public $formConfig = 'config_form.yaml';
+    public $reorderConfig = 'config_reorder.yaml';
+
+    public function __construct()
+    {
+        parent::__construct();
+        BackendMenu::setContext('Dreycorp.Landingmanager', 'main-menu-item', 'side-menu-item4');
+    }
+    public function create_onShow()
+    {
+        $this->vars['form']['fields']['landing_page_id']['value'] = Request::input('landing_page_id');
+    }
+    
+    public function create($landing_page_id = 0)
+    {
+        parent::create();
+    }
+    
+    public function getBlockContent($id)
+    {
+        $block = Block::find($id);
+        $blockType = $block->block_type;
+    
+        $filePath = 'themes/mytheme/partials/blocks/'. $block->landing_page->url. '/block--'. $id. '.htm';
+        $blockContent = file_get_contents($filePath);
+    
+        return $blockContent;
+    }
+    
+    
+
+
+
+    
+}
+
+// plugins/dreycorp/landingmanager/controllers/brandsettings/config_form.yaml
+name: BrandSettings
+form: $/dreycorp/landingmanager/models/brandsetting/fields.yaml
+modelClass: Dreycorp\Landingmanager\Models\BrandSetting
+defaultRedirect: dreycorp/landingmanager/brandsettings
+create:
+    redirect: 'dreycorp/landingmanager/brandsettings/update/:id'
+    redirectClose: dreycorp/landingmanager/brandsettings
+update:
+    redirect: dreycorp/landingmanager/brandsettings
+    redirectClose: dreycorp/landingmanager/brandsettings
+
+// plugins/dreycorp/landingmanager/controllers/brandsettings/config_list.yaml
+list: $/dreycorp/landingmanager/models/brandsetting/columns.yaml
+modelClass: Dreycorp\Landingmanager\Models\BrandSetting
+title: BrandSettings
+noRecordsMessage: 'backend::lang.list.no_records'
+showSetup: true
+showCheckboxes: true
+recordsPerPage: 20
+toolbar:
+    buttons: list_toolbar
+    search:
+        prompt: 'backend::lang.list.search_prompt'
+recordUrl: 'dreycorp/landingmanager/brandsettings/update/:id'
+
+// plugins/dreycorp/landingmanager/controllers/brandsettings/create.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/brandsettings') ?>">BrandSettings</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.create')) ?>
+                </button>
+                <button 
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.create_and_close')) ?>
+                </button>
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/landingmanager/brandsettings') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/landingmanager/brandsettings') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/landingmanager/controllers/brandsettings/index.htm
+<?= $this->listRender() ?>
+
+// plugins/dreycorp/landingmanager/controllers/brandsettings/preview.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/brandsettings') ?>">BrandSettings</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <div class="form-preview">
+        <?= $this->formRenderPreview() ?>
+    </div>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e($this->fatalError) ?></p>
+<?php endif ?>
+
+<p>
+    <a href="<?= Backend::url('dreycorp/landingmanager/brandsettings') ?>" class="btn btn-default wn-icon-chevron-left">
+        <?= e(trans('backend::lang.form.return_to_list')) ?>
+    </a>
+</p>
+
+// plugins/dreycorp/landingmanager/controllers/brandsettings/update.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/brandsettings') ?>">BrandSettings</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-request-data="redirect:0"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.save')) ?>
+                </button>
+                <button
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.save_and_close')) ?>
+                </button>
+                <button
+                    type="button"
+                    class="wn-icon-trash-o btn-icon danger pull-right"
+                    data-request="onDelete"
+                    data-load-indicator="<?= e(trans('backend::lang.form.deleting')) ?>"
+                    data-request-confirm="<?= e(trans('backend::lang.form.confirm_delete')) ?>">
+                </button>
+
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/landingmanager/brandsettings') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/landingmanager/brandsettings') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/landingmanager/controllers/brandsettings/_list_toolbar.htm
+<div data-control="toolbar">
+        <a href="<?= Backend::url('dreycorp/landingmanager/brandsettings/create') ?>" class="btn btn-primary wn-icon-plus"><?= e(trans('backend::lang.form.create')) ?></a>
+            <button
+        class="btn btn-default wn-icon-trash-o"
+        disabled="disabled"
+        onclick="$(this).data('request-data', {
+            checked: $('.control-list').listWidget('getChecked')
+        })"
+        data-request="onDelete"
+        data-request-confirm="<?= e(trans('backend::lang.list.delete_selected_confirm')) ?>"
+        data-trigger-action="enable"
+        data-trigger=".control-list input[type=checkbox]"
+        data-trigger-condition="checked"
+        data-request-success="$(this).prop('disabled', true)"
+        data-stripe-load-indicator>
+        <?= e(trans('backend::lang.list.delete_selected')) ?>
+    </button>
+</div>
+
+// plugins/dreycorp/landingmanager/controllers/BrandSettings.php
+<?php namespace Dreycorp\Landingmanager\Controllers;
+
+use Backend\Classes\Controller;
+use BackendMenu;
+
+class BrandSettings extends Controller
+{
+    public $implement = [        'Backend\Behaviors\ListController',        'Backend\Behaviors\FormController'    ];
+    
+    public $listConfig = 'config_list.yaml';
+    public $formConfig = 'config_form.yaml';
+
+    public function __construct()
+    {
+        parent::__construct();
+        BackendMenu::setContext('Dreycorp.Landingmanager', 'main-menu-item', 'side-menu-item');
+    }
+}
+
+// plugins/dreycorp/landingmanager/controllers/landingpages/config_form.yaml
+name: LandingPages
+form: $/dreycorp/landingmanager/models/landingpage/fields.yaml
+modelClass: Dreycorp\Landingmanager\Models\LandingPage
+defaultRedirect: dreycorp/landingmanager/landingpages
+create:
+    redirect: 'dreycorp/landingmanager/landingpages/update/:id'
+    redirectClose: dreycorp/landingmanager/landingpages
+update:
+    redirect: dreycorp/landingmanager/landingpages
+    redirectClose: dreycorp/landingmanager/landingpages
+
+// plugins/dreycorp/landingmanager/controllers/landingpages/config_list.yaml
+list: $/dreycorp/landingmanager/models/landingpage/columns.yaml
+modelClass: Dreycorp\Landingmanager\Models\LandingPage
+title: LandingPages
+noRecordsMessage: 'backend::lang.list.no_records'
+showSetup: true
+showCheckboxes: true
+recordsPerPage: 20
+toolbar:
+    buttons: list_toolbar
+    search:
+        prompt: 'backend::lang.list.search_prompt'
+recordUrl: 'dreycorp/landingmanager/landingpages/update/:id'
+
+// plugins/dreycorp/landingmanager/controllers/landingpages/create.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/landingpages') ?>">LandingPages</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.create')) ?>
+                </button>
+                <button 
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.create_and_close')) ?>
+                </button>
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/landingmanager/landingpages') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/landingmanager/landingpages') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/landingmanager/controllers/landingpages/index.htm
+<?= $this->listRender() ?>
+
+// plugins/dreycorp/landingmanager/controllers/landingpages/preview.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/landingpages') ?>">LandingPages</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <div class="form-preview">
+        <?= $this->formRenderPreview() ?>
+    </div>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e($this->fatalError) ?></p>
+<?php endif ?>
+
+<p>
+    <a href="<?= Backend::url('dreycorp/landingmanager/landingpages') ?>" class="btn btn-default oc-icon-chevron-left">
+        <?= e(trans('backend::lang.form.return_to_list')) ?>
+    </a>
+</p>
+
+// plugins/dreycorp/landingmanager/controllers/landingpages/update.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/landingmanager/landingpages') ?>">LandingPages</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <a href="<?= Backend::url('dreycorp/landingmanager/blocks/create', ['landing_page_id' => $formModel->id])?>">Создать блок</a>
+        <?php
+        
+        $blocks = $formModel->blocks()->get();
+        ?>
+
+        <h2>Блоки</h2>
+
+        <ul>
+            <?php foreach ($blocks as $block):?>
+                <li><?= $block->block_type?> (<?= $block->block_content?>)</li>
+            <?php endforeach;?>
+        </ul>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-request-data="redirect:0"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.save')) ?>
+                </button>
+                <button
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.save_and_close')) ?>
+                </button>
+                <button
+                    type="button"
+                    class="oc-icon-trash-o btn-icon danger pull-right"
+                    data-request="onDelete"
+                    data-load-indicator="<?= e(trans('backend::lang.form.deleting')) ?>"
+                    data-request-confirm="<?= e(trans('backend::lang.form.confirm_delete')) ?>">
+                </button>
+
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/landingmanager/landingpages') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/landingmanager/landingpages') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/landingmanager/controllers/landingpages/_blocks.htm
+{% for block in landingPage.blocks.sortBy('order') %}
+    {% set blockFileName = block.block_type ~ '_' ~ block.id ~ '.htm' %}
+    {% set blockPath = '~/plugins/dreycorp/landingmanager/partials/blocks/' ~ landingPage.id ~ '/' ~ blockFileName  %}
+
+
+<div class= "block-container">
+    {% partial blockPath %}
+    <a href="{{ 'landingpages/updateblock'|page({landingPageId: landingPage.id, blockId: block.id}) }}">Редактировать</a>
+
+</div>
+
+{% endfor %}
+
+// plugins/dreycorp/landingmanager/controllers/landingpages/_list_toolbar.htm
+<div data-control="toolbar">
+        <a href="<?= Backend::url('dreycorp/landingmanager/landingpages/create') ?>" class="btn btn-primary oc-icon-plus"><?= e(trans('backend::lang.form.create')) ?></a>
+            <button
+        class="btn btn-default oc-icon-trash-o"
+        disabled="disabled"
+        onclick="$(this).data('request-data', {
+            checked: $('.control-list').listWidget('getChecked')
+        })"
+        data-request="onDelete"
+        data-request-confirm="<?= e(trans('backend::lang.list.delete_selected_confirm')) ?>"
+        data-trigger-action="enable"
+        data-trigger=".control-list input[type=checkbox]"
+        data-trigger-condition="checked"
+        data-request-success="$(this).prop('disabled', true)"
+        data-stripe-load-indicator>
+        <?= e(trans('backend::lang.list.delete_selected')) ?>
+    </button>
+</div>
+
+// plugins/dreycorp/landingmanager/controllers/LandingPages.php
+<?php namespace Dreycorp\Landingmanager\Controllers;
+
+use Backend\Classes\Controller;
+use BackendMenu;
+use Dreycorp\Landingmanager\Models\Block;
+use Dreycorp\Landingmanager\Models\LandingPage;
+use File;
+use Flash;
+use Input;
+use Redirect;
+use Request;
+
+class LandingPages extends Controller
+{
+    public $implement = [        'Backend\Behaviors\ListController',        'Backend\Behaviors\FormController'    ];
+    
+    public $listConfig = 'config_list.yaml';
+    public $formConfig = 'config_form.yaml';
+
+    public function __construct()
+    {
+        parent::__construct();
+        BackendMenu::setContext('Dreycorp.Landingmanager', 'main-menu-item', 'side-menu-item2');
+    }
+
+    public function onCreateBlock($id)
+    {
+       $landingPage = LandingPage::findOrFail($id);
+       $availableTemplates = File::files(plugins_path('dreycorp/landingmanager/partials/blocks/template'));
+
+       $this->vars['landingPage'] = $landingPage;
+       $this->vars['availableTemplates'] = $availableTemplates;
+
+       return $this->makePartial('create_block_form');
+   }
+
+
+   public function onSaveBlock($id) {
+        $landingPage = LandingPage::findOrFail($id);
+
+        $blockType = post('block_type');
+
+
+        $block = new Block();
+        $block->landing_page_id = $landingPage->id;
+        $block->block_type = $blockType;
+        $block->order = Block::where('landing_page_id', $landingPage->id)->max('order') + 1;
+
+        $block->save();
+
+
+
+        $templateContent = File::get(plugins_path('dreycorp/landingmanager/partials/blocks/template/' . $blockType . '.htm'));
+
+        $blockDir = plugins_path('dreycorp/landingmanager/partials/blocks/' . $landingPage->id);
+        if (!File::isDirectory($blockDir)) {
+            File::makeDirectory($blockDir, 0777, true, true);
+        }
+
+        $blockFileName = $blockType . '_' . $block->id . '.htm';
+        $blockPath = $blockDir . '/' . $blockFileName;
+
+        File::put($blockPath, $templateContent);
+
+
+        Flash::success('Блок создан!');
+
+        return Redirect::refresh();
+    }
+/*
+    public function update($recordId)
+    {
+
+        $landingPage = LandingPage::findOrFail($recordId);
+        $this->vars['landingPage'] = $landingPage;
+    
+        $blocks = $landingPage->blocks;
+        $this->vars['blocks'] = $blocks;
+        
+        //return $this->makePartial('update', ['blocks' => $blocks]);
+
+    }
+*/
+
+
+    
+   public function onUpdateBlock($landingPageId, $blockId)
+   {
+       $blockFileName = post('block_type') . '_' . $blockId . '.htm';
+       $blockPath = plugins_path('dreycorp/landingmanager/partials/blocks/' . $landingPageId . '/' . $blockFileName);
+
+
+       $content = post('block_content');
+       File::put($blockPath, $content);
+
+
+       Flash::success('Блок обновлен!');
+       return Redirect::refresh();
+
+   }
+
+   public function updateBlock($landingPageId, $blockId)
+   {
+       $block = Block::findOrFail($blockId); // Find the block by ID
+   
+       $blockFileName = $block->block_type . '_' . $blockId . '.htm'; // Use $block->block_type
+       $blockPath = plugins_path('dreycorp/landingmanager/partials/blocks/' . $landingPageId . '/' . $blockFileName);
+       $blockContent = File::get($blockPath);
+   
+       if ($this->request->isPost()) {
+           $newContent = post('block_content');  // Get content through $_POST
+           File::put($blockPath, $newContent);
+   
+           Flash::success('Блок обновлен!');
+           return Redirect::refresh();
+       }
+   
+       return $this->makePartial('updateblock', [
+           'landingPageId' => $landingPageId,
+           'blockId' => $blockId,
+           'blockType' => $block->block_type,  // Pass block_type to the view
+           'blockContent' => $blockContent
+       ]);
+   }
+   
+
+   
+}
+
+// plugins/dreycorp/landingmanager/models/abtest/columns.yaml
+columns:
+    id:
+        label: id
+        type: number
+    landing_page_id:
+        label: landing_page_id
+        type: number
+    test_name:
+        label: test_name
+        type: text
+    variant_a_id:
+        label: variant_a_id
+        type: number
+    variant_b_id:
+        label: variant_b_id
+        type: number
+    start_date:
+        label: start_date
+        type: text
+    end_date:
+        label: end_date
+        type: text
+
+// plugins/dreycorp/landingmanager/models/abtest/fields.yaml
+fields:
+    landing_page_id:
+        label: 'Landing page id'
+        span: auto
+        type: number
+    test_name:
+        label: 'Test name'
+        span: auto
+        type: text
+    variant_a_id:
+        label: 'Variant a id'
+        span: auto
+        type: number
+    variant_b_id:
+        label: 'Variant b id'
+        span: auto
+        type: number
+    start_date:
+        label: 'Start date'
+        span: auto
+        type: datepicker
+    end_date:
+        label: 'End date'
+        span: auto
+        type: datepicker
+
+// plugins/dreycorp/landingmanager/models/AbTest.php
+<?php namespace Dreycorp\Landingmanager\Models;
+
+use Model;
+
+/**
+ * Model
+ */
+class AbTest extends Model
+{
+    use \Winter\Storm\Database\Traits\Validation;
+    
+    /*
+     * Disable timestamps by default.
+     * Remove this line if timestamps are defined in the database table.
+     */
+    public $timestamps = false;
+
+
+    /**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_landingmanager_ab_tests';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+    ];
+
+    public $belongsTo = ['landing_page' => ['Dreycorp\Landingmanager\Models\LandingPage'], 'variant_a' => ['Dreycorp\Landingmanager\Models\LandingPage', 'key' => 'variant_a_id'], 'variant_b' => ['Dreycorp\Landingmanager\Models\LandingPage', 'key' => 'variant_b_id']]; 
+
+}
+
+// plugins/dreycorp/landingmanager/models/abtestresult/columns.yaml
+columns:
+    id:
+        label: id
+        type: number
+    ab_test_id:
+        label: ab_test_id
+        type: number
+    variant_id:
+        label: variant_id
+        type: number
+    views:
+        label: views
+        type: number
+    clicks:
+        label: clicks
+        type: number
+    conversions:
+        label: conversions
+        type: number
+    time_on_page:
+        label: time_on_page
+        type: number
+
+// plugins/dreycorp/landingmanager/models/abtestresult/fields.yaml
+fields:
+    ab_test_id:
+        label: 'Ab test id'
+        span: auto
+        type: number
+    variant_id:
+        label: 'Variant id'
+        span: auto
+        type: number
+    views:
+        label: Views
+        span: auto
+        type: number
+    clicks:
+        label: Clicks
+        span: auto
+        type: number
+    conversions:
+        label: Conversions
+        span: auto
+        type: number
+    time_on_page:
+        label: 'Time on page'
+        span: auto
+        type: number
+
+// plugins/dreycorp/landingmanager/models/AbTestResult.php
+<?php namespace Dreycorp\Landingmanager\Models;
+
+use Model;
+
+/**
+ * Model
+ */
+class AbTestResult extends Model
+{
+    use \Winter\Storm\Database\Traits\Validation;
+    
+    /*
+     * Disable timestamps by default.
+     * Remove this line if timestamps are defined in the database table.
+     */
+    public $timestamps = false;
+
+
+    /**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_landingmanager_ab_test_results';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+    ];
+
+    public $belongsTo = ['ab_test' => ['Dreycorp\Landingmanager\Models\AbTest'], 'variant' => ['Dreycorp\Landingmanager\Models\LandingPage', 'key' => 'variant_id']];
+
+}
+
+// plugins/dreycorp/landingmanager/models/block/columns.yaml
+columns:
+    id:
+        label: id
+        type: number
+    landing_page:
+        label: Landing Page
+        relation: landingPage
+        select: title
+    block_type:
+        label: block_type
+        type: text
+    block_content:
+        label: block_content
+        type: text
+    order:
+        label: order
+        type: number
+
+// plugins/dreycorp/landingmanager/models/block/fields.yaml
+fields:
+    block_type:
+        label: Block Type
+        type: dropdown
+        options: getBlockTypes
+    block_content:
+        label: Block Content
+        type: codeeditor
+    order:
+        label: Order
+        span: auto
+        type: number
+    landingPage:
+        label: Landing Page
+        type: relation
+        select: title
+        scope: ~
+        modelClass: Dreycorp\Landingmanager\Models\LandingPage
+
+// plugins/dreycorp/landingmanager/models/Block.php
+<?php namespace Dreycorp\Landingmanager\Models;
+
+use Model;
+
+/**
+ * Model
+ */
+class Block extends Model
+{
+    use \Winter\Storm\Database\Traits\Validation;
+    
+    /*
+     * Disable timestamps by default.
+     * Remove this line if timestamps are defined in the database table.
+     */
+    public $timestamps = false;
+
+
+    /**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_landingmanager_blocks';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+    ];
+
+    
+    public $belongsTo = [
+        'landingPage' => ['Dreycorp\Landingmanager\Models\LandingPage', 'key' => 'landing_page_id']
+    ];
+
+
+    public function getBlockTypes()
+    {
+        $blockTypes = [];
+        $files = scandir('themes/mytheme/partials/blocks/template');
+        foreach ($files as $file) {
+            if (strpos($file, '.htm')!== false) {
+                $blockTypes[$file] = [
+                    0 => str_replace('.htm', '', $file),
+                ];
+            }
+        }
+        
+        return $blockTypes;
+    }
+    
+
+
+    public function afterFetch()
+    {
+        $filePath = 'themes/mytheme/partials/blocks/'. $this->landingPage->url. '/block-'. $this->id. '.htm';
+        if (file_exists($filePath)) {
+            $this->block_content = file_get_contents($filePath);
+        }
+    }
+    
+    public function beforeSave()
+    {
+        $dirPath = 'themes/mytheme/partials/blocks/'. $this->landingPage->url;
+        if (!is_dir($dirPath)) {
+            mkdir($dirPath, 0775, true);
+        }
+    
+        $blockContent = $this->block_content;
+        $blockContent = str_replace('src="images/', 'src="{{assetsUrl}}images/', $blockContent);
+    
+        $filePath = $dirPath. '/block-'. $this->id. '.htm';
+        file_put_contents($filePath, $blockContent);
+        chmod($filePath, 0775);
+        $this->block_content = null;
+    }
+
+
+}
+
+// plugins/dreycorp/landingmanager/models/brandsetting/columns.yaml
+columns:
+    id:
+        label: id
+        type: number
+    logo_path:
+        label: logo_path
+        type: text
+    favicon_path:
+        label: favicon_path
+        type: text
+    analytics_js_code:
+        label: analytics_js_code
+        type: text
+
+// plugins/dreycorp/landingmanager/models/brandsetting/fields.yaml
+fields:
+    logo_path:
+        label: logo_path
+        mode: file
+        span: auto
+        type: mediafinder
+    favicon_path:
+        label: 'Поиск медиа'
+        mode: file
+        span: auto
+        type: mediafinder
+    analytics_js_code:
+        label: 'Текстовая область'
+        size: ''
+        span: auto
+        type: textarea
+
+// plugins/dreycorp/landingmanager/models/BrandSetting.php
+<?php namespace Dreycorp\Landingmanager\Models;
+
+use Model;
+
+/**
+ * Model
+ */
+class BrandSetting extends Model
+{
+    use \Winter\Storm\Database\Traits\Validation;
+    
+    /*
+     * Disable timestamps by default.
+     * Remove this line if timestamps are defined in the database table.
+     */
+    public $timestamps = false;
+
+
+    /**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_landingmanager_brand_settings';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+    ];
+    
+    /**
+     * @var array Attribute names to encode and decode using JSON.
+     */
+    public $jsonable = [];
+}
+
+// plugins/dreycorp/landingmanager/models/landingpage/columns.yaml
+columns:
+    id:
+        label: id
+        type: number
+    title:
+        label: title
+        type: text
+    meta_title:
+        label: meta_title
+        type: text
+    meta_description:
+        label: meta_description
+        type: text
+    url:
+        label: url
+        type: text
+    layout:
+        label: layout
+        type: text
+    is_hidden:
+        label: is_hidden
+        type: text
+
+// plugins/dreycorp/landingmanager/models/landingpage/fields.yaml
+fields:
+    title:
+        label: Заголовок
+        span: auto
+        type: text
+    url:
+        label: URL
+        span: auto
+        type: text
+    layout:
+        label: Layout
+        type: dropdown
+        options: getLayoutOptions
+    meta_title:
+        label: Meta Title
+        span: auto
+        type: text
+    meta_description:
+        label: Meta Description
+        span: auto
+        type: textarea
+    canonical_url:
+        label: Canonical URL
+        span: auto
+        type: text
+    og_title:
+        label: OG Title
+        span: auto
+        type: text
+    og_description:
+        label: OG Description
+        span: auto
+        type: textarea
+    og_image:
+        label: OG Image
+        span: auto
+        type: fileupload
+    is_hidden:
+        label: Скрыть страницу
+        span: auto
+        type: checkbox
+
+// plugins/dreycorp/landingmanager/models/LandingPage.php
+<?php namespace Dreycorp\Landingmanager\Models;
+
+use Model;
+use File;
+/**
+ * Model
+ */
+class LandingPage extends Model
+{
+    use \Winter\Storm\Database\Traits\Validation;
+    
+    /*
+     * Disable timestamps by default.
+     * Remove this line if timestamps are defined in the database table.
+     */
+    public $timestamps = false;
+    
+    protected $fillable = ['title', 'url', 'meta_title', 'meta_description', 'canonical_url', 'og_title', 'og_description', 'og_image', 'is_hidden', 'assets' ];
+
+    /**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_landingmanager_landing_pages';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+    ];
+
+    protected $casts = [
+        'assets' => 'array',
+    ];
+
+    public $hasOne = ['ab_test_a' => ['Dreycorp\Landingmanager\Models\AbTest', 'key' => 'variant_a_id'], 'ab_test_b' => ['Dreycorp\Landingmanager\Models\AbTest', 'key' => 'variant_b_id']];
+    public $attachOne = ['og_image' => ['System\Models\File']];
+
+    public $hasMany = [
+        'blocks' => ['Dreycorp\Landingmanager\Models\Block', 'key' => 'landing_page_id'],
+    ];
+
+
+    public function getLayoutOptions()
+    {
+        $layouts = [];
+        $files = scandir('themes/mytheme/layouts');
+        foreach ($files as $file) {
+            if (strpos($file, '.htm')!== false) {
+                $layouts[$file] = str_replace('.htm', '', $file);
+            }
+        }
+        return $layouts;
+    }
+    public function afterCreate()
+    {
+        $directory = 'storage/app/media/'. $this->url;
+        if (!File::isDirectory($directory)) {
+            File::makeDirectory($directory, 0777, true);
+            chmod($directory, 0777);
+        }
+    }
+
+
+    public function beforeSave()
+    {
+
+        $directory = 'storage/app/media/'. $this->url;
+        if (!File::isDirectory($directory)) {
+            File::makeDirectory($directory, 0777, true);
+            chmod($directory, 0777);
+        }
+        $jsFiles = [];
+        $cssFiles = [];
+        if (File::isDirectory($directory. '/js')) {
+            $jsFiles = File::files($directory. '/js');
+        }
+        if (File::isDirectory($directory. '/css')) {
+            $cssFiles = File::files($directory. '/css');
+        }
+        $assets = [
+            'js' => array_map(function ($file) use ($directory) {
+                return asset($directory. '/js/'. basename($file));
+            }, $jsFiles),
+            'css' => array_map(function ($file) use ($directory) {
+                return asset($directory. '/css/'. basename($file));
+            }, $cssFiles),
+        ];
+        $this->assets = $assets;
+    }
+
+
+}
+
+// plugins/dreycorp/landingmanager/views/landingpages/update.htm
+<?= Form::open(['class' => 'layout']) ?>
+
+
+
+    <div class="layout-row">
+        <?= $this->formWidget('title') ?>
+
+        <div id="blocks">
+            {% partial 'landingpages/_blocks' landingPage=landingPage %}
+        </div>
+
+        <a href="{{ 'landingpages/createblock'|page({id: landingPage.id })  }}">Создать блок</a>
+
+        <input type="file" name="og_image">  или <input type="text" name="og_image">
+
+
+      </div>
+
+
+
+
+    <?= Form::close() ?>
+
+// plugins/dreycorp/landingmanager/views/landingpages/updateblock.htm
+{% set landingPageId = landingPageId %}
+{% set blockId = blockId %}
+{% set blockType = blockType %}
+{% set blockContent = blockContent %}
+
+{% set  blockFileName = blockType ~ '_' ~ blockId ~ '.htm' %}
+{% set  blockPath = '~/plugins/dreycorp/landingmanager/partials/blocks/' ~ landingPageId ~ '/' ~ blockFileName  %}
+{% set blockContent = blockPath | file_get_contents %}
+{% partial 'landingpages/_block_form' %}
+
+// plugins/dreycorp/landingmanager/views/landingpages/_block_form.htm
+<form data-request="onUpdateBlock" data-request-update="'landingpages/blocks': '#blocks'" data-request-data="landing_page_id: {{ landingPageId }}, block_id: {{ blockId }}">
+    <input type="hidden" name="block_type" value="{{ blockType }}">
+    <textarea name="block_content">{{ blockContent | raw }}</textarea>
+    <button type="submit">Сохранить блок</button>
+</form>
+

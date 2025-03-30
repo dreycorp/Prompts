@@ -1,0 +1,2023 @@
+### Техническое задание (ТЗ) для генерации слайдов на Laravel с Livewire
+
+#### Общие требования
+
+1. Поддержка мобильной и десктоп версии.
+2. Одностраничный интерфейс (Single Page Application).
+3. Поддержка синтаксиса Markdown для форматирования текста.
+4. Скачивание всех картинок в один архив и по отдельности по порядковым номерам.
+5. Добавление колонтитулов с нумерацией страниц.
+6. Автоматическое разбитие текста на блоки по предложениям и абзацам с возможностью их редактирования.
+7. Возможность добавления новых слайдов.
+8. Выбор фона для слайдов из предустановленного списка и загрузка новых фонов (квадратное изображение для Instagram).
+9. Выбор кириллических шрифтов из заданного списка (например, Roboto, Ubuntu).
+10. Настройка одинаковых отступов текста от границ изображения.
+11. Настройка числа символов для автоматического разбития текста с возможностью пересчета.
+12. Вставка текста статьи в текстовый редактор.
+13. Вывод начального текста для поста в Instagram с возможностью настройки количества символов и добавлением текста "Продолжение в слайдах 🎞️".
+14. Предпросмотр слайдов перед окончательной генерацией.
+15. Функция автосохранения текущего состояния работы.
+16. Возможность создания и сохранения шаблонов слайдов для повторного использования.
+17. Личный кабинет для пользователя, где можно сохранять и управлять своими настройками (фон, шрифты, отступы и т.д.).
+
+Функционал уже готов. Вот файлы проекта. Изучи их и я скажу какие нужны дополнения и правки.
+
+
+// resources/views/slide-template.blade.php
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+ 
+    <style>
+       @font-face {
+            font-family: 'MyriadPro';
+            src: url('{{ asset('fonts/MyriadPro-Regular.otf') }}');
+        }
+        @font-face {
+            font-family: 'Ubuntu';
+            src: url('{{ asset('fonts/Ubuntu-Regular.ttf') }}');
+        }
+        @font-face {
+            font-family: 'Roboto';
+            src: url('{{ asset('fonts/Roboto-Regular.ttf') }}');
+        }
+        @php
+            $height = 1080 - $margin*2;
+        @endphp
+        body {
+            font-family: "Roboto", system-ui;
+            font-weight: 400;
+            font-style: normal;
+            margin: 0;
+            padding: 0;
+            width: 1080px;
+            height: {{ $height }}px;
+            display: flex;
+            justify-content: center;
+            align-items: start;
+            box-sizing: border-box;
+        }
+        h1, h2, h3 {
+            font-weight: bold;
+        }
+        h1 {
+            font-size: {{ $font_size * 1.5 }}px;
+        }
+        h2 {
+            font-size: {{ $font_size * 1.3 }}px;
+        }
+        h3 {
+            font-size: {{ $font_size * 1.1 }}px;
+        }
+        p, li {
+            font-size: {{ $font_size }}px;
+            line-height: {{ $line_height }}px;
+        }
+        li {
+            margin-left: 20px;
+        }
+        .slide {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background-image: url('{{ asset("images/$background_image") }}');
+            background-size: cover;
+            background-position: center;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            padding: {{ $margin }}px;
+        }
+        .page-number {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            font-size: {{ $font_size * 0.8 }}px;
+            color: gray;
+        }
+
+        .ubuntu-light {
+  font-family: "Ubuntu", system-ui;
+  font-weight: 300;
+  font-style: normal;
+}
+
+.ubuntu-regular {
+  font-family: "Ubuntu", system-ui;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.ubuntu-medium {
+  font-family: "Ubuntu", system-ui;
+  font-weight: 500;
+  font-style: normal;
+}
+
+.ubuntu-bold {
+  font-family: "Ubuntu", system-ui;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.ubuntu-light-italic {
+  font-family: "Ubuntu", system-ui;
+  font-weight: 300;
+  font-style: italic;
+}
+
+.ubuntu-regular-italic {
+  font-family: "Ubuntu", system-ui;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.ubuntu-medium-italic {
+  font-family: "Ubuntu", system-ui;
+  font-weight: 500;
+  font-style: italic;
+}
+
+.ubuntu-bold-italic {
+  font-family: "Ubuntu", system-ui;
+  font-weight: 700;
+  font-style: italic;
+}
+.roboto-thin {
+  font-family: "Roboto", system-ui;
+  font-weight: 100;
+  font-style: normal;
+}
+
+.roboto-light {
+  font-family: "Roboto", system-ui;
+  font-weight: 300;
+  font-style: normal;
+}
+
+.roboto-regular {
+  font-family: "Roboto", system-ui;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.roboto-medium {
+  font-family: "Roboto", system-ui;
+  font-weight: 500;
+  font-style: normal;
+}
+
+.roboto-bold {
+  font-family: "Roboto", system-ui;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.roboto-black {
+  font-family: "Roboto", system-ui;
+  font-weight: 900;
+  font-style: normal;
+}
+
+.roboto-thin-italic {
+  font-family: "Roboto", system-ui;
+  font-weight: 100;
+  font-style: italic;
+}
+
+.roboto-light-italic {
+  font-family: "Roboto", system-ui;
+  font-weight: 300;
+  font-style: italic;
+}
+
+.roboto-regular-italic {
+  font-family: "Roboto", system-ui;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.roboto-medium-italic {
+  font-family: "Roboto", system-ui;
+  font-weight: 500;
+  font-style: italic;
+}
+
+.roboto-bold-italic {
+  font-family: "Roboto", system-ui;
+  font-weight: 700;
+  font-style: italic;
+}
+
+.roboto-black-italic {
+  font-family: "Roboto", system-ui;
+  font-weight: 900;
+  font-style: italic;
+}
+b, strong {
+            font-weight: bold;
+        }
+        i, em {
+            font-style: italic;
+        }
+
+    </style>
+</head>
+<body class="{{ $font }}">
+    <div class="slide {{ $font }}">
+        {!! $content !!}
+        <div class="page-number">Страница {{ $page_number }} из {{ $total_pages }}</div>
+    </div>
+</body>
+</html>
+
+// app/Helpers/TelegramHelper.php
+<?php
+
+namespace App\Helpers;
+
+use GuzzleHttp\Client;
+
+class TelegramHelper
+{
+    protected $botToken;
+    protected $chatId;
+    protected $client;
+
+    public function __construct()
+    {
+        $this->botToken = config('telegram.bot_token');
+        $this->chatId = config('telegram.chat_id');
+        $this->client = new Client();
+    }
+
+    public function sendMessage($message)
+    {
+        $this->client->post("https://api.telegram.org/bot{$this->botToken}/sendMessage", [
+            'json' => [
+                'chat_id' => $this->chatId,
+                'text' => $message,
+            ]
+        ]);
+    }
+
+    public function sendDocument($filePath)
+    {
+        $this->client->post("https://api.telegram.org/bot{$this->botToken}/sendDocument", [
+            'multipart' => [
+                [
+                    'name'     => 'chat_id',
+                    'contents' => $this->chatId
+                ],
+                [
+                    'name'     => 'document',
+                    'contents' => fopen($filePath, 'r')
+                ]
+            ]
+        ]);
+    }
+}
+
+// app/Http/Controllers/HomeController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Optional;
+
+class HomeController extends Controller
+{
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    public function __construct()
+    {
+        $this->middleware('auth');
+    }
+
+    /**
+     * Show the application dashboard.
+     *
+     * @return \Illuminate\Contracts\Support\Renderable
+     */
+    public function index()
+    {
+        $sumOfCurentMounth = Operation::statByMounth();
+
+        $data['sum'] = $sumOfCurentMounth;
+        $data['mounth'] = date('F');
+
+        return view('stat.home', $data);
+    }
+
+    public function add()
+    {
+        $data = [];
+        return view('stat.add', $data);
+
+    }
+
+    public function addSave(Request $request)
+    {
+        if ($request->isMethod('post')) {
+ 
+            $operation = new Operation();
+            $operation->amount = (int)$request->input('amount');
+            if (empty($request->input('ts'))){
+                //$operation->ts = date('Y-m-d', strtotime($request->input('ts')));
+            } else{
+                $operation->ts = date('Y-m-d', strtotime($request->input('ts')));
+            }
+    
+            $operation->save();
+
+            return redirect()->route('home');
+        }
+        return redirect()->route('stat.add');
+    }
+
+    public function stat()
+    {
+        $data['list'] = Operation::getListStat();
+
+        $max = 0;
+        foreach ($data['list'] as $item){
+            if ($max < $item->avg){
+                $max = $item->avg;
+            }
+        }
+        
+        foreach ($data['list'] as $num=>&$item){
+            
+            $item->proc = (int)(($item->avg / $max) * 100);
+
+        }
+
+
+        $data['max'] = $max;
+        return view('stat.stat', $data);
+    }
+
+    public function list($selectmonth = "")
+    {
+        if (empty($selectmonth)) {
+            $selectmonth = date('Y-n', strtotime('now'));
+            $data['list'] = Operation::getList();
+        } else
+        {
+            //$select = implode('-', $selectmonth);
+            $d = $selectmonth.'-01';
+            $data['list'] = Operation::getList(date('Y-m-d H:i:s', strtotime($d)), date('Y-m-t 23:59:59', strtotime($d)));
+        }
+
+        $data['monthName'] = [
+            '',
+            'Январь',
+            'Февраль',
+            'Март',
+            'Апрель',
+            'Май',
+            'Июнь',
+            'Июль',
+            'Август',
+            'Сентябрь',
+            'Октябрь',
+            'Ноябрь',
+            'Декабрь',
+        ];
+        $data['curMonth'] = [
+            
+            date('Y-n', strtotime('now - 3 month')) => $data['monthName'][date('n', strtotime('now - 3 month'))],
+            date('Y-n', strtotime('now - 2 month')) => $data['monthName'][date('n', strtotime('now - 2 month'))],
+            date('Y-n', strtotime('now - 1 month')) => $data['monthName'][date('n', strtotime('now - 1 month'))],
+            date('Y-n', strtotime('now')) => $data['monthName'][date('n', strtotime('now'))],
+        ];
+        
+        $data['selectMonth'] = $selectmonth;
+       
+        return view('stat.list', $data);
+    }
+
+
+    public function del($id, $confirmed)
+    {
+        if ((int)$confirmed == 1) {
+            Operation::del((int)$id);
+        } else {
+            return view('stat.del', ['id'=>(int)$id]);
+        }
+       
+        return redirect()->route('home');
+    }
+
+}
+
+// app/Http/Controllers/HtmlToMarkdownController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+
+class HtmlToMarkdownController extends Controller
+{
+    public function show()
+    {
+        return view('convert-html-to-markdown');
+    }
+}
+
+// app/Http/Controllers/SlideController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Slide;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use ZipArchive;
+use Intervention\Image\ImageManagerStatic as Image;
+
+class SlideController extends Controller
+{
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    public function __construct()
+    {
+        $this->middleware('auth');
+
+    }
+
+
+    public function create()
+    {
+        return view('slides.create');
+    }
+
+    public function store(Request $request)
+    {
+        // Валидация и сохранение данных
+        $data = $request->validate([
+            'text' => 'required|string',
+            'background_image' => 'nullable|string',
+            'font' => 'nullable|string',
+            'margin' => 'nullable|integer',
+        ]);
+
+        $slide = Slide::create($data);
+
+        // Генерация изображения для слайда
+        $img = Image::make(public_path('images/' . $slide->background_image));
+        $img->text($slide->text, $slide->margin, $slide->margin, function($font) use ($slide) {
+            $font->file(public_path('fonts/' . $slide->font . '.ttf'));
+            $font->size(24);
+            $font->color('#000000');
+            $font->align('left');
+            $font->valign('top');
+        });
+        $imgPath = 'slides/slide_' . $slide->id . '.jpg';
+        $img->save(public_path($imgPath));
+
+        // Обновление пути к изображению в базе данных
+        $slide->update(['background_image' => $imgPath]);
+
+        return redirect()->back()->with('success', 'Слайд успешно сохранен.');
+
+    }
+
+    public function download($id)
+    {
+        $slide = Slide::findOrFail($id);
+        return response()->download(public_path($slide->background_image));
+    }
+
+    public function downloadAll()
+    {
+        $slides = Slide::all();
+        $zip = new ZipArchive;
+        $fileName = 'slides.zip';
+
+        if ($zip->open(public_path($fileName), ZipArchive::CREATE) === TRUE) {
+            foreach ($slides as $slide) {
+                $zip->addFile(public_path($slide->background_image), basename($slide->background_image));
+            }
+            $zip->close();
+        }
+
+        return response()->download(public_path($fileName));
+    }
+}
+
+// app/Http/Controllers/TelegramController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\TelegramBot;
+use App\Models\TelegramStep;
+use App\Models\TelegramUser;
+use Illuminate\Http\Request;
+use App\Models\TelegramStepBlock;
+use App\Models\TelegramStepCommand;
+use Illuminate\Support\Facades\Log;
+use App\Models\TelegramUserChatHistory;
+use PhpParser\Node\Stmt\Continue_;
+
+use function GuzzleHttp\json_decode;
+
+class TelegramController extends Controller
+{
+    public function savedata(Request $request, $is_new, $model, $id = 0){
+        //$model = "App\\Models\\$model";
+        
+        if ((int)$is_new == 1){
+            $element = new $model();
+        } else
+        {
+            $data = $model::find($id);
+            $input = $request->input();
+            foreach ($input as $field=>$value){
+                $data->$field = $value;
+            }
+            //dd($input);
+            $data->save();
+        }
+        
+        return response()->json(['id' => $data->id, 'status' => true]);
+    }
+
+    public function setstepcoord(Request $request, $step_id)
+    {
+        $data = TelegramStep::find((int)$step_id);
+
+        $input = $request->input();
+
+        $data->coord_y = (int)$input['y'];
+        $data->coord_x = (int)$input['x'];
+
+        $data->save();
+        return true;
+    }
+
+    public function saveparams(Request $request, $model, $id)
+    {
+        $data = $model::find($id);
+        $input = $request->input();
+        $params = $data->getParams();
+        foreach ($input as $field=>$value){
+            if ($value == '') continue;
+
+            $ff = explode('_', $field);
+
+            if (count($ff) == 1) {
+                $params[$field] = $value; 
+            } else{
+                $params[$ff[0]][$ff[1]] = $value;
+            } 
+        }
+        
+        $data->params = json_encode($params);
+        $data->save();
+    }
+
+    public function savenextstep(Request $request, $model, $id)
+    {
+        $data = $model::find($id);
+        $input = $request->input();
+        $params = $data->getNextStep();
+        foreach ($input as $field=>$value){
+            if ($value == '') continue;
+
+            $ff = explode('.', $field);
+            if (count($ff) == 1) {
+                $params[$field] = $value; 
+            } else{
+                $params[$ff[0]][$ff[1]] = $value;
+            } 
+        }
+        
+        $data->next_step = json_encode($params);
+        $data->save();
+
+        TelegramStep::reOrd($data->step_block_id);
+    }
+
+
+    public function index(Request $request) {
+        $data['bots'] = TelegramBot::all();
+        $data['bots_count'] = count($data['bots']);
+        
+        $data['users'] = TelegramUser::limit(10)->get();
+        
+        $data['user_count'] = TelegramUser::where('bot_id', '>=', 1)->count();
+        
+        return view('telegram.index', $data);
+    }
+    
+    public function bot(Request $request, $bot_id) {
+        $data['bot'] = TelegramBot::find((int)$bot_id);
+        $data['step_blocks'] = $data['bot']->step_blocks;
+        
+        return view('telegram.bot', $data);
+    }
+    
+    public function addstep(Request $request, $step_block_id)
+    {
+        $block = TelegramStepBlock::with('steps')->find((int)$step_block_id);
+
+        $step = new TelegramStep();
+        $step->step_block_id = (int)$step_block_id;
+        $step->type = strtoupper($request->input('type'));
+
+        if (!empty($block->steps)) {
+            $step->next_step = json_encode(['success'=>$block->steps[0]->id]); 
+        } else {
+            $step->next_step = json_encode(['success'=>1]); 
+        }
+        
+
+        $step->save();
+
+        $data['step'] = $step;
+        $data['steps'] = $block->steps;
+
+        return view('telegram.item.step', $data);
+
+    }
+
+    public function addcommand(Request $request, $step_id) {
+        
+        $command = new TelegramStepCommand();
+        $command->type = 'TEXT';
+        $command->step_id = (int)$step_id;
+        $command->ord = 20;
+        $command->save();
+        
+        $data['command'] = $command;
+        $data['types'] = ['TEXT', 'TEXT_BTN', 'TIMER', 'FILE', 'VIDEO','AUDIO','PHOTO','VOICE'];
+ 
+        return view('telegram.item.step_command', $data);
+    }
+    
+    public function block(Request $request, $block_id) {
+        $data['block'] = TelegramStepBlock::with('steps')->with('steps.commands')->find((int)$block_id);
+        $data['steps'] = $data['block']->steps;
+        $data['types'] = ['TEXT', 'TEXT_BTN', 'TIMER', 'FILE', 'VIDEO','AUDIO','PHOTO','VOICE'];
+        $data['step_types'] = ['MESSAGE','IF','TIMER','CODE','VAR','DO'];
+        return view('telegram.block_panel', $data);
+    }
+    
+    public function setwebhook($bot_id) {
+        $bot = TelegramBot::find((int)$bot_id);
+        $url = config('app.url').config('telegram.url_webhook').$bot->id;
+        $http = \Illuminate\Support\Facades\Http::get(config('telegram.url').$bot->token."/setWebhook?url=".$url);
+        //dd($url);
+        dd(json_decode($http->body()));
+    }
+    
+    public function webhook(Request $request, $bot_id){
+        Log::debug($request->all());
+        
+        $bot_id = (int)$bot_id;
+        
+        if (!empty($request->input('callback_query', null))){
+            $data = $request->input('callback_query', null); 
+            TelegramBot::callback_query($data, $bot_id);
+            //Log::debug($data);
+        }
+        
+        if (!empty($request->input('message', null))){
+            $data = $request->input('message', null);
+            if (isset($data['text'])) {
+                if (\Illuminate\Support\Str::startsWith($data['text'], '/')){
+                    TelegramBot::command($data, $bot_id);
+                } else
+                {
+                    TelegramBot::message($data, $bot_id);
+                }
+
+                $mess_id = 0 ? !isset($data['message_id']) : $data['message_id'];
+                TelegramUserChatHistory::addHistory($data['chat']['id'], 0, $data['text'], $mess_id);
+
+            }  
+        }
+        
+        return response(true, 200);
+    }
+    
+    
+}
+
+// app/Http/Controllers/UserSettingsController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+
+class UserSettingsController extends Controller
+{
+
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    public function __construct()
+    {
+        $this->middleware('auth');
+
+    }
+
+    public function index()
+    {
+        return view('user.settings');
+    }
+}
+
+// app/Http/Livewire/DownloadComponent.php
+<?php
+
+namespace App\Http\Livewire;
+
+use Livewire\Component;
+
+class DownloadComponent extends Component
+{
+    public function downloadSlide($id)
+    {
+        // Логика для скачивания отдельного слайда
+    }
+
+    public function downloadAllSlides()
+    {
+        // Логика для скачивания всех слайдов в архиве
+    }
+
+    public function render()
+    {
+        return view('livewire.download-component');
+    }
+}
+
+// app/Http/Livewire/HtmlToMarkdownComponent.php
+<?php
+
+namespace App\Http\Livewire;
+
+use Livewire\Component;
+use GuzzleHttp\Client;
+use League\HTMLToMarkdown\HtmlConverter;
+use Symfony\Component\DomCrawler\Crawler;
+
+class HtmlToMarkdownComponent extends Component
+{
+    public $url;
+    public $markdown;
+    public $cssSelector = "div.content--article-item-content__content-1S";
+    public $htmlContent; // Добавим свойство для хранения полученного HTML
+
+    public function convertToMarkdown()
+    {
+        $client = new Client([
+            'headers' => [
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 YaBrowser/24.7.0.0 Safari/537.36',
+                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language' => 'ru,en;q=0.9',
+                'Accept-Encoding' => 'gzip, deflate, br, zstd',
+                'Referer' => 'https://dzen.ru/profile/editor/andrey_pakhorukov', // Добавляем реферер
+                'Cookie' => 'Zen-authorization=PMO96ioCPdjNDtS0HUc9NFdBCwj7cwXPA8P.1710581815048; Path=/; Expires=Sat, 14-Sep-2024 08:52:46 GMT; Max-Age=300; Secure; HttpOnly', // Добавьте ваши куки, если необходимо
+            ]
+        ]);
+
+        $response = $client->get($this->url);
+        $this->htmlContent = (string) $response->getBody();
+
+        // Используем Crawler для выбора нужного блока
+        $crawler = new Crawler($this->htmlContent);
+
+        // Проверка на наличие нужного элемента
+        if ($crawler->filter($this->cssSelector)->count() > 0) {
+            $filteredHtml = $crawler->filter($this->cssSelector)->html();
+            $converter = new HtmlConverter();
+            $this->markdown = $converter->convert($filteredHtml);
+        } else {
+            $this->markdown = 'Элемент с указанным селектором не найден.';
+        }
+    }
+
+    public function render()
+    {
+        return view('livewire.html-to-markdown-component');
+    }
+}
+
+// app/Http/Livewire/SlidePreviewComponent.php
+<?php
+
+namespace App\Http\Livewire;
+
+use Livewire\Component;
+use Illuminate\Support\Facades\File;
+//use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
+use App\Models\Slide;
+use Illuminate\Support\Facades\View;
+use ZipArchive;
+use Parsedown;
+use LitEmoji\LitEmoji;
+use App\Helpers\TelegramHelper;
+use Intervention\Image\Laravel\Facades\Image;
+
+class SlidePreviewComponent extends Component
+{
+    public $slides = [];
+    public $settings = [];
+    public $initial_text;
+    public $optimizeImages = true;
+
+    protected $listeners = ['slidesUpdated' => 'updateSlides', 'settingsUpdated' => 'updateSettings', 'editSlide' => 'editSlide', 'textUpdated' => 'updateInitialText', 'sendToTelegram' => 'sendToTelegram', 'updateOptimizeImages' => 'updateOptimizeImages'];
+
+    public function mount()
+    {
+        $this->loadSlides();
+        $this->loadSettings();
+        $this->clearOldImages();
+    }
+
+    public function updateOptimizeImages($optimize)
+    {
+        $this->optimizeImages = $optimize;
+    }
+
+    public function updateInitialText($text)
+    {
+        $this->initial_text = $text;
+    }
+
+    public function loadSlides()
+    {
+        $this->slides = Slide::all()->toArray();
+    }
+
+    public function loadSettings()
+    {
+        $slide = Slide::first();
+        if ($slide) {
+            $this->settings = [
+                'background' => $slide->background_image,
+                'font' => $slide->font,
+                'margin' => $slide->margin,
+                'char_limit' => $slide->char_limit,
+                'font_size' => $slide->font_size,
+                'line_height' => $slide->line_height,
+            ];
+        } else {
+            $this->settings = [
+                'background' => 'Background1.jpg',
+                'font' => 'Roboto',
+                'margin' => 10,
+                'char_limit' => 1000,
+                
+                'font_size' => 24,
+                'line_height' => 36,
+            ];
+        }
+    }
+
+    public function updateSettings($settings)
+    {
+        $this->settings = array_merge($this->settings, $settings);
+    }
+
+    public function updateSlides($slides)
+    {
+        $this->slides = [];
+        foreach ($slides as $slide_text) {
+            $this->slides[] = [
+                'text' => $slide_text,
+                'background_image' => $this->settings['background'],
+                'font' => $this->settings['font'],
+                'margin' => $this->settings['margin'],
+                
+                'font_size' => $this->settings['font_size'],
+                'line_height' => $this->settings['line_height'],
+            ];
+        }
+        $this->saveSlides();
+        $this->generatePreviews();
+    }
+
+    public function saveSlides()
+    {
+  
+    }
+
+    public function generatePreviews()
+    {
+        foreach ($this->slides as $index => $slide) {
+            $this->generateHtml($index);
+            $this->generateScreenshot($index);
+        }
+    }
+
+    public function generateHtml($index)
+    {
+        $slide = $this->slides[$index];
+        $totalPages = count($this->slides);
+
+        // Используем Parsedown для преобразования Markdown в HTML
+        $parsedown = new Parsedown();
+        $markdownContent = $slide['text'];
+        $htmlContent = $parsedown->text(LitEmoji::unicodeToShortcode($markdownContent));
+
+        // Используем LitEmoji для преобразования эмодзи
+        $htmlContent = LitEmoji::shortcodeToUnicode($htmlContent);
+
+        $content = View::make('slide-template', [
+            'content' => $htmlContent,
+            'background_image' => $slide['background_image'],
+            'font' => $slide['font'],
+            'margin' => $slide['margin'],
+            'font_size' => $slide['font_size'],
+            'line_height' => $slide['line_height'],
+            'page_number' => $index + 1,
+            'total_pages' => $totalPages,
+        ])->render();
+
+        $htmlPath = public_path("slides/slide_$index.html");
+        File::put($htmlPath, $content);
+
+        return $htmlPath;
+    }
+
+    public function generateScreenshot($index)
+    {
+        $htmlPath = $this->generateHtml($index);
+        $imgPath = public_path("slides/slide_$index.png");
+
+        // Используем wkhtmltoimage для создания скриншота
+        $command = "wkhtmltoimage --width 1080 --height 1080 $htmlPath $imgPath 2>&1";
+        $output = [];
+        $returnVar = 0;
+        exec($command, $output, $returnVar);
+
+        if ($returnVar !== 0) {
+            throw new \Exception("wkhtmltoimage command failed: " . implode("\n", $output));
+        }
+
+        if ($this->optimizeImages) {
+            $this->optimizeImage($imgPath);
+        }
+
+        // Добавляем временную метку к URL изображения
+        $this->slides[$index]['preview'] = "slides/slide_$index.png";
+
+        return $imgPath;
+    }
+
+    public function optimizeImage($imgPath)
+    {
+        $image = Image::read($imgPath);
+        $image->save($imgPath, 75); // Сохраняем изображение с качеством 75%
+    }
+
+    public function downloadSlide($index)
+    {
+        $slide = $this->slides[$index];
+        $filePath = public_path($slide['preview']);
+        return response()->download($filePath);
+    }
+
+    public function downloadAllSlides()
+    {
+        $zip = new ZipArchive;
+        $zipFileName = 'slides.zip';
+        $zipFilePath = storage_path($zipFileName);
+
+        if ($zip->open($zipFilePath, ZipArchive::CREATE) === TRUE) {
+            foreach ($this->slides as $slide) {
+                $filePath = public_path($slide['preview']);
+                $relativeName = basename($filePath);
+                $zip->addFile($filePath, $relativeName);
+            }
+            $zip->close();
+        }
+
+        return response()->download($zipFilePath);
+    }
+
+    public function clearOldImages()
+    {
+        $files = File::files(public_path('slides'));
+        $now = now();
+
+        foreach ($files as $file) {
+            if ($file->isFile()) {
+                $fileCreationTime = Carbon::createFromTimestamp($file->getCTime());
+                if ($now->diffInDays($fileCreationTime) >= 7) {
+                    File::delete($file->getRealPath());
+                }
+            }
+        }
+    }
+
+    public function updateSlide($index)
+    {
+        $this->generateHtml($index);
+        $this->generateScreenshot($index);
+        $this->emit('slidesUpdated', $this->slides);
+    }
+
+    public function sendToTelegram()
+    {
+        $telegram = new TelegramHelper();
+
+        // Отправка первой части статьи
+        $telegram->sendMessage($this->initial_text);
+
+        // Отправка превью слайдов
+        foreach ($this->slides as $index => $slide) {
+            $filePath = public_path("slides/slide_$index.png");
+            $telegram->sendDocument($filePath);
+        }
+    }
+
+    public function render()
+    {
+        return view('livewire.slide-preview-component', ['slides' => $this->slides]);
+    }
+}
+
+// app/Http/Livewire/SlideSettingsComponent.php
+<?php
+
+namespace App\Http\Livewire;
+
+use Livewire\Component;
+use Illuminate\Support\Facades\File;
+use App\Models\Slide;
+use Livewire\WithFileUploads;
+use Illuminate\Support\Facades\Storage;
+
+class SlideSettingsComponent extends Component
+{
+    use WithFileUploads;
+
+    public $background;
+    public $font;
+    public $margin = 30;
+    public $char_limit = 2000;
+    public $font_size = 24; // Новый параметр
+    public $line_height = 36; // Новый параметр
+
+    public $backgrounds = [];
+    public $newBackground;
+
+    public $fonts = [
+        'ubuntu-light',
+        'ubuntu-regular',
+        'ubuntu-medium',
+        'ubuntu-bold',
+        'ubuntu-light-italic',
+        'ubuntu-regular-italic',
+        'ubuntu-medium-italic',
+        'ubuntu-bold-italic',
+        'roboto-thin',
+        'roboto-light',
+        'roboto-regular',
+        'roboto-medium',
+        'roboto-bold',
+        'roboto-black',
+        'roboto-thin-italic',
+        'roboto-light-italic',
+        'roboto-regular-italic',
+        'roboto-medium-italic',
+        'roboto-bold-italic',
+        'roboto-black-italic',
+    ];
+
+    public function mount()
+    {
+        $this->backgrounds = $this->getFilesFromDirectory(public_path('images'));
+
+        // Загрузка текущих параметров из таблицы slides
+        $slide = Slide::first();
+        if ($slide) {
+            $this->background = $slide->background_image;
+            $this->font = $slide->font;
+            $this->margin = $slide->margin;
+            $this->char_limit = $slide->char_limit;
+            $this->font_size = $slide->font_size;
+            $this->line_height = $slide->line_height;
+        } else {
+            // Установка значений по умолчанию
+            if (empty($this->background)) {
+                $this->background = !empty($this->backgrounds) ? $this->backgrounds[0] : '';
+            }
+            if (empty($this->font)) {
+                $this->font = !empty($this->fonts) ? $this->fonts[0] : '';
+            }
+        }
+    }
+
+    private function getFilesFromDirectory($directory, $extensions = ['jpg', 'jpeg', 'png'])
+    {
+        $files = [];
+        if (File::exists($directory)) {
+            $allFiles = File::files($directory);
+            foreach ($allFiles as $file) {
+                if (in_array($file->getExtension(), $extensions)) {
+                    $files[] = $file->getFilename();
+                }
+            }
+        }
+        return $files;
+    }
+
+    public function uploadNewBackground()
+    {
+        $this->validate([
+            'newBackground' => 'image|max:1024', // 1MB Max
+        ]);
+
+        $newBackgroundName = $this->newBackground->store('images/backgrounds', 'public');
+        $newBackgroundBaseName = basename($newBackgroundName);
+
+        // Копирование файла из storage в public
+        $sourcePath = storage_path('app/public/images/backgrounds/' . $newBackgroundBaseName);
+        $destinationPath = public_path('images/' . $newBackgroundBaseName);
+
+        if (File::copy($sourcePath, $destinationPath)) {
+            $this->backgrounds[] = $newBackgroundBaseName;
+            $this->background = $newBackgroundBaseName;
+
+            $this->emit('backgroundUploaded', $newBackgroundName);
+        } else {
+            $this->addError('newBackground', 'Ошибка при копировании файла.');
+        }
+    }
+
+    public function updateSettings()
+    {
+        // Обновим настройки в таблице slides
+        Slide::truncate();
+        Slide::create([
+            'background_image' => $this->background,
+            'font' => $this->font,
+            'margin' => $this->margin,
+            'char_limit' => $this->char_limit,
+            'font_size' => $this->font_size, // Новый параметр
+            'line_height' => $this->line_height, // Новый параметр
+        ]);
+
+        $this->emit('settingsUpdated', [
+            'background' => $this->background,
+            'font' => $this->font,
+            'margin' => $this->margin,
+            'char_limit' => $this->char_limit,
+            'font_size' => $this->font_size, // Новый параметр
+            'line_height' => $this->line_height, // Новый параметр
+        ]);
+    }
+
+    public function render()
+    {
+        return view('livewire.slide-settings-component');
+    }
+}
+
+// app/Http/Livewire/TextEditorComponent.php
+<?php
+
+namespace App\Http\Livewire;
+
+use Livewire\Component;
+
+class TextEditorComponent extends Component
+{
+    public $text = '';
+    public $initial_text_length = 1200; // Длина первой части текста
+    public $slide_text_length = 2000; // Длина текста на слайде
+    public $initial_text = '';
+    public $slide_texts = [];
+    public $optimizeImages = true;
+
+    public function updatedText()
+    {
+        $this->splitText();
+    }
+
+    public function updatedInitialTextLength()
+    {
+        $this->splitText();
+    }
+
+    public function splitText()
+    {
+        $paragraphs = preg_split('/\n+/', $this->text);
+
+        $current_length = 0;
+        $this->initial_text = '';
+        $remaining_text = '';
+        $init_exit = false;
+
+        foreach ($paragraphs as $paragraph) {
+            if ($current_length + strlen($paragraph) <= $this->initial_text_length && !$init_exit) {
+                $this->initial_text .= $paragraph . "\n";
+                $current_length += strlen($paragraph);
+            } else {
+                $init_exit = true;
+                $remaining_text .= $paragraph . "\n";
+            }
+        }
+
+        $this->initial_text = trim($this->initial_text) . "\n\nПродолжение в слайдах 🎞";
+
+        $this->slide_texts = [];
+        $current_slide_text = '';
+        $current_length = 0;
+
+        $paragraphs = preg_split('/\n+/', $remaining_text); // Разделяем текст по двойным пустым строкам или обозначению "---"
+//dump($paragraphs);
+        foreach ($paragraphs as $paragraph) {
+            if (trim($paragraph) === '---') {
+                $this->slide_texts[] = trim($current_slide_text);
+                $current_slide_text = '';
+                $current_length = 0;
+            } elseif ($current_length + strlen($paragraph) <= $this->slide_text_length || empty(trim($paragraph))) {
+                $current_slide_text .= $paragraph . "\n\n";
+                $current_length += strlen($paragraph);
+            } else {
+                $this->slide_texts[] = trim($current_slide_text);
+                $current_slide_text = $paragraph . "\n\n";
+                $current_length = strlen($paragraph);
+            }
+        }
+
+        if (!empty(trim($current_slide_text))) {
+            $this->slide_texts[] = trim($current_slide_text);
+        }
+
+        $this->emit('slidesUpdated', $this->slide_texts);
+        $this->emit('textUpdated', $this->initial_text);
+        $this->emit('updateOptimizeImages', $this->optimizeImages);
+    }
+    public function render()
+    {
+        return view('livewire.text-editor-component');
+    }
+}
+
+// app/Http/Livewire/UserSettingsComponent.php
+<?php
+
+namespace App\Http\Livewire;
+
+use Livewire\Component;
+
+class UserSettingsComponent extends Component
+{
+    public $backgrounds = ['Фон 1', 'Фон 2', 'Фон 3'];
+    public $fonts = ['Roboto', 'Ubuntu', 'Arial'];
+    public $templates = [];
+
+    public function saveSettings()
+    {
+        // Логика для сохранения настроек пользователя
+    }
+
+    public function loadTemplate($id)
+    {
+        // Логика для загрузки шаблона
+    }
+
+    public function render()
+    {
+        return view('livewire.user-settings-component');
+    }
+}
+
+// app/Models/Slide.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Slide extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'text',
+        'background_image',
+        'font',
+        'margin',
+        'char_limit',
+        'font_size',
+        'line_height',
+    ];
+}
+
+// app/Models/User.php
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
+
+class User extends Authenticatable
+{
+    use HasApiTokens, HasFactory, Notifiable;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var array<int, string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+    ];
+}
+
+// routes/web.php
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\HomeController;
+use App\Http\Controllers\TelegramController;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\SlideController;
+
+use App\Http\Controllers\HtmlToMarkdownController;
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register web routes for your application. These
+| routes are loaded by the RouteServiceProvider within a group which
+| contains the "web" middleware group. Now create something great!
+|
+*/
+
+Route::controller(HomeController::class)->group(function () {
+    Route::get('/', 'index')->name('home');
+
+    Route::get('/home', 'index')->name('home');
+
+    Route::get('/add', 'add')->name('add');
+    Route::post('/addSave', 'addSave');
+
+    //Route::get('/list', 'HomeController@list')->name('list');
+    Route::get('/list/{selectmonth?}', 'list')->name('list');
+    Route::get('/stat', 'stat')->name('stat');
+
+    Route::get('/del/{id}/{confirmed}', 'del')->name('del');
+});
+
+Route::controller(TelegramController::class)->group(function () {
+    Route::get('/telegram', 'index')->name('telegram');
+    Route::get('/telegram/bot/{bot_id}', 'bot')->name('bot');
+    Route::get('/telegram/block/{block_id}', 'block')->name('block');
+    
+    
+    Route::post('/telegram/webhook/{bot_id?}', 'webhook')->name('webhook');
+    Route::get('/telegram/setwebhook/{bot_id}', 'setwebhook')->name('setwebhook');
+    
+    Route::post('/telegram/savedata/{is_new}/{model}/{id?}', 'savedata')->name('savedata');
+    Route::post('/telegram/saveparams/{model}/{id}', 'saveparams')->name('saveparams');
+    Route::post('/telegram/savenextstep/{model}/{id}', 'savenextstep')->name('savenextstep');
+    Route::post('/telegram/savevarparams/{model}/{id}', 'savevarparams')->name('savevarparams');
+    Route::post('/telegram/addcommand/{step_id}', 'addcommand')->name('addcommand');
+    Route::post('/telegram/addstep/{step_block_id}', 'addstep')->name('addstep'); 
+
+    Route::post('/telegram/setstepcoord/{step_id}', 'setstepcoord')->name('setstepcoord');
+});
+
+Route::get('/web', function () {
+    $http = Http::get(config('telegram.url').config('telegram.token')."/getWebhookinfo");
+    dd(json_decode($http->body()));
+    
+});
+
+
+
+
+Route::get('/create-slides', [SlideController::class, 'create'])->name('create-slides');
+Route::post('/store-slide', [SlideController::class, 'store'])->name('store-slide');
+Route::get('/download-slide/{id}', [SlideController::class, 'download'])->name('download-slide');
+Route::get('/download-all-slides', [SlideController::class, 'downloadAll'])->name('download-all-slides');
+
+Route::get('/convert-html-to-markdown', [HtmlToMarkdownController::class, 'show'])->name('convert-to-markdown');
+
+Route::get('/test', function (\App\Helpers\Telegram $telegram) {
+    $buttons = [
+        'inline_keyboard'=>[
+            [
+                [
+                    'text' => 'Привет',
+                    'callback_data' => '1'
+                ],
+                [
+                    'text' => 'Привет 2',
+                    'callback_data' => '2'
+                ],
+            ]
+        ]
+    ];
+    $http = $telegram->sendButtons(config('telegram.chat'), '<b>Привет</b>', json_encode($buttons));
+    dd(json_decode($http->body()));
+    return view('welcome');
+});
+
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->middleware(['auth'])->name('dashboard');
+
+require __DIR__.'/auth.php';
+
+// resources/views/components/application-logo.blade.php
+<svg viewBox="0 0 316 316" xmlns="http://www.w3.org/2000/svg" {{ $attributes }}>
+    <path d="M305.8 81.125C305.77 80.995 305.69 80.885 305.65 80.755C305.56 80.525 305.49 80.285 305.37 80.075C305.29 79.935 305.17 79.815 305.07 79.685C304.94 79.515 304.83 79.325 304.68 79.175C304.55 79.045 304.39 78.955 304.25 78.845C304.09 78.715 303.95 78.575 303.77 78.475L251.32 48.275C249.97 47.495 248.31 47.495 246.96 48.275L194.51 78.475C194.33 78.575 194.19 78.725 194.03 78.845C193.89 78.955 193.73 79.045 193.6 79.175C193.45 79.325 193.34 79.515 193.21 79.685C193.11 79.815 192.99 79.935 192.91 80.075C192.79 80.285 192.71 80.525 192.63 80.755C192.58 80.875 192.51 80.995 192.48 81.125C192.38 81.495 192.33 81.875 192.33 82.265V139.625L148.62 164.795V52.575C148.62 52.185 148.57 51.805 148.47 51.435C148.44 51.305 148.36 51.195 148.32 51.065C148.23 50.835 148.16 50.595 148.04 50.385C147.96 50.245 147.84 50.125 147.74 49.995C147.61 49.825 147.5 49.635 147.35 49.485C147.22 49.355 147.06 49.265 146.92 49.155C146.76 49.025 146.62 48.885 146.44 48.785L93.99 18.585C92.64 17.805 90.98 17.805 89.63 18.585L37.18 48.785C37 48.885 36.86 49.035 36.7 49.155C36.56 49.265 36.4 49.355 36.27 49.485C36.12 49.635 36.01 49.825 35.88 49.995C35.78 50.125 35.66 50.245 35.58 50.385C35.46 50.595 35.38 50.835 35.3 51.065C35.25 51.185 35.18 51.305 35.15 51.435C35.05 51.805 35 52.185 35 52.575V232.235C35 233.795 35.84 235.245 37.19 236.025L142.1 296.425C142.33 296.555 142.58 296.635 142.82 296.725C142.93 296.765 143.04 296.835 143.16 296.865C143.53 296.965 143.9 297.015 144.28 297.015C144.66 297.015 145.03 296.965 145.4 296.865C145.5 296.835 145.59 296.775 145.69 296.745C145.95 296.655 146.21 296.565 146.45 296.435L251.36 236.035C252.72 235.255 253.55 233.815 253.55 232.245V174.885L303.81 145.945C305.17 145.165 306 143.725 306 142.155V82.265C305.95 81.875 305.89 81.495 305.8 81.125ZM144.2 227.205L100.57 202.515L146.39 176.135L196.66 147.195L240.33 172.335L208.29 190.625L144.2 227.205ZM244.75 114.995V164.795L226.39 154.225L201.03 139.625V89.825L219.39 100.395L244.75 114.995ZM249.12 57.105L292.81 82.265L249.12 107.425L205.43 82.265L249.12 57.105ZM114.49 184.425L96.13 194.995V85.305L121.49 70.705L139.85 60.135V169.815L114.49 184.425ZM91.76 27.425L135.45 52.585L91.76 77.745L48.07 52.585L91.76 27.425ZM43.67 60.135L62.03 70.705L87.39 85.305V202.545V202.555V202.565C87.39 202.735 87.44 202.895 87.46 203.055C87.49 203.265 87.49 203.485 87.55 203.695V203.705C87.6 203.875 87.69 204.035 87.76 204.195C87.84 204.375 87.89 204.575 87.99 204.745C87.99 204.745 87.99 204.755 88 204.755C88.09 204.905 88.22 205.035 88.33 205.175C88.45 205.335 88.55 205.495 88.69 205.635L88.7 205.645C88.82 205.765 88.98 205.855 89.12 205.965C89.28 206.085 89.42 206.225 89.59 206.325C89.6 206.325 89.6 206.325 89.61 206.335C89.62 206.335 89.62 206.345 89.63 206.345L139.87 234.775V285.065L43.67 229.705V60.135ZM244.75 229.705L148.58 285.075V234.775L219.8 194.115L244.75 179.875V229.705ZM297.2 139.625L253.49 164.795V114.995L278.85 100.395L297.21 89.825V139.625H297.2Z"/>
+</svg>
+
+// resources/views/components/auth-card.blade.php
+<div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-100">
+    <div>
+        {{ $logo }}
+    </div>
+
+    <div class="w-full sm:max-w-md mt-6 px-6 py-4 bg-white shadow-md overflow-hidden sm:rounded-lg">
+        {{ $slot }}
+    </div>
+</div>
+
+// resources/views/components/auth-session-status.blade.php
+@props(['status'])
+
+@if ($status)
+    <div {{ $attributes->merge(['class' => 'font-medium text-sm text-green-600']) }}>
+        {{ $status }}
+    </div>
+@endif
+
+// resources/views/components/auth-validation-errors.blade.php
+@props(['errors'])
+
+@if ($errors->any())
+    <div {{ $attributes }}>
+        <div class="font-medium text-red-600">
+            {{ __('Whoops! Something went wrong.') }}
+        </div>
+
+        <ul class="mt-3 list-disc list-inside text-sm text-red-600">
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+
+// resources/views/components/btn.blade.php
+<a {{ $attributes->merge(['class' => 'btn']) }}>{{ $slot }}</a>
+
+// resources/views/components/button.blade.php
+<button {{ $attributes->merge(['type' => 'submit', 'class' => 'inline-flex items-center px-4 py-2 bg-gray-800 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-700 active:bg-gray-900 focus:outline-none focus:border-gray-900 focus:ring ring-gray-300 disabled:opacity-25 transition ease-in-out duration-150']) }}>
+    {{ $slot }}
+</button>
+
+// resources/views/components/dropdown-link.blade.php
+<a {{ $attributes->merge(['class' => 'block px-4 py-2 text-sm leading-5 text-gray-700 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 transition duration-150 ease-in-out']) }}>{{ $slot }}</a>
+
+// resources/views/components/dropdown.blade.php
+@props(['align' => 'right', 'width' => '48', 'contentClasses' => 'py-1 bg-white'])
+
+@php
+switch ($align) {
+    case 'left':
+        $alignmentClasses = 'origin-top-left left-0';
+        break;
+    case 'top':
+        $alignmentClasses = 'origin-top';
+        break;
+    case 'right':
+    default:
+        $alignmentClasses = 'origin-top-right right-0';
+        break;
+}
+
+switch ($width) {
+    case '48':
+        $width = 'w-48';
+        break;
+}
+@endphp
+
+<div class="relative" x-data="{ open: false }" @click.outside="open = false" @close.stop="open = false">
+    <div @click="open = ! open">
+        {{ $trigger }}
+    </div>
+
+    <div x-show="open"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="transform opacity-0 scale-95"
+            x-transition:enter-end="transform opacity-100 scale-100"
+            x-transition:leave="transition ease-in duration-75"
+            x-transition:leave-start="transform opacity-100 scale-100"
+            x-transition:leave-end="transform opacity-0 scale-95"
+            class="absolute z-50 mt-2 {{ $width }} rounded-md shadow-lg {{ $alignmentClasses }}"
+            style="display: none;"
+            @click="open = false">
+        <div class="rounded-md ring-1 ring-black ring-opacity-5 {{ $contentClasses }}">
+            {{ $content }}
+        </div>
+    </div>
+</div>
+
+// resources/views/components/input.blade.php
+@props(['disabled' => false])
+
+<input {{ $disabled ? 'disabled' : '' }} {!! $attributes->merge(['class' => 'rounded-md shadow-sm border-gray-300 focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50']) !!}>
+
+// resources/views/components/label.blade.php
+@props(['value'])
+
+<label {{ $attributes->merge(['class' => 'block font-medium text-sm text-gray-700']) }}>
+    {{ $value ?? $slot }}
+</label>
+
+// resources/views/components/nav-link.blade.php
+@props(['active'])
+
+@php
+$classes = ($active ?? false)
+            ? 'inline-flex items-center px-1 pt-1 border-b-2 border-indigo-400 text-sm font-medium leading-5 text-gray-900 focus:outline-none focus:border-indigo-700 transition duration-150 ease-in-out'
+            : 'inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out';
+@endphp
+
+<a {{ $attributes->merge(['class' => $classes]) }}>
+    {{ $slot }}
+</a>
+
+// resources/views/components/responsive-nav-link.blade.php
+@props(['active'])
+
+@php
+$classes = ($active ?? false)
+            ? 'block pl-3 pr-4 py-2 border-l-4 border-indigo-400 text-base font-medium text-indigo-700 bg-indigo-50 focus:outline-none focus:text-indigo-800 focus:bg-indigo-100 focus:border-indigo-700 transition duration-150 ease-in-out'
+            : 'block pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-50 hover:border-gray-300 focus:outline-none focus:text-gray-800 focus:bg-gray-50 focus:border-gray-300 transition duration-150 ease-in-out';
+@endphp
+
+<a {{ $attributes->merge(['class' => $classes]) }}>
+    {{ $slot }}
+</a>
+
+// resources/views/layouts/app.blade.php
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
+
+        @isset($page_title)
+        <title>{{ $page_title }}</title>
+        @else
+        <title>{{ strip_tags($header) }} - {{ config('app.name', 'Laravel') }}</title>
+        @endisset
+        <!-- Favicon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="https://pahorukov.info/themes/moj-shablon/assets/favicon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="https://pahorukov.info/themes/moj-shablon/assets/favicon/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="https://pahorukov.info/themes/moj-shablon/assets/favicon/favicon-16x16.png">
+    <link rel="manifest" href="https://pahorukov.info/themes/moj-shablon/assets/favicon/site.webmanifest">
+    <link rel="mask-icon" href="https://pahorukov.info/themes/moj-shablon/assets/favicon/safari-pinned-tab.svg" color="#5bbad5">
+
+        <!-- Fonts --> 
+        <link rel="stylesheet" href="https://fonts.bunny.net/css2?family=Nunito:wght@400;600;700&display=swap">
+
+        <!-- Scripts -->
+        @vite(['resources/js/app.js'])
+        <script src='https://code.jquery.com/jquery-3.6.0.min.js'></script>
+        <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.js"></script>
+        <script src="/build/assets/main.js"></script>
+        <link rel="stylesheet" href="/css/style.css" />
+        @livewireStyles
+    </head>
+    <body class="font-sans antialiased">
+        <div class="min-h-screen bg-gray-100">
+            @include('layouts.navigation')
+
+            <!-- Page Heading -->
+            <header class="bg-white shadow">
+                <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                    {{ $header }}
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <main>
+                {{ $slot }}
+            </main>
+        </div>
+        <script src="https://unpkg.com/flowbite@1.5.2/dist/flowbite.js"></script>
+        <script src="https://unpkg.com/flowbite@1.5.2/dist/datepicker.js"></script>
+        @livewireScripts
+    </body>
+</html>
+
+// resources/views/layouts/guest.blade.php
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
+
+        <title>{{ config('app.name', 'Laravel') }}</title>
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="https://fonts.bunny.net/css2?family=Nunito:wght@400;600;700&display=swap">
+
+        <!-- Scripts -->
+        @vite(['resources/css/app.css', 'resources/js/app.js'])
+    </head>
+    <body>
+        <div class="font-sans text-gray-900 antialiased">
+            {{ $slot }}
+        </div>
+    </body>
+</html>
+
+// resources/views/layouts/navigation.blade.php
+<nav x-data="{ open: false }" class="bg-white border-b border-gray-100">
+    <!-- Primary Navigation Menu -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16">
+            <div class="flex">
+                <!-- Logo -->
+                <div class="shrink-0 flex items-center">
+                    <a href="{{ route('dashboard') }}">
+                        <x-application-logo class="block h-10 w-auto fill-current text-gray-600" />
+                    </a>
+                </div>
+
+                <!-- Navigation Links -->
+                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                    <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
+                        {{ __('Dashboard') }}
+                    </x-nav-link>
+                    <x-nav-link :href="route('home')" :active="request()->routeIs('home')">
+                        Добавить доход
+                    </x-nav-link>
+                    <x-nav-link :href="route('create-slides')" :active="request()->routeIs('create-slides')">
+                        Слайды
+                    </x-nav-link>
+                    <x-nav-link :href="route('convert-to-markdown')" :active="request()->routeIs('convert-to-markdown')">
+                        Html to MD
+                    </x-nav-link>
+                    <x-nav-link :href="route('telegram')" :active="request()->routeIs('telegram')">
+                        Телеграм
+                    </x-nav-link>
+
+                </div>
+            </div>
+
+            <!-- Settings Dropdown -->
+            <div class="hidden sm:flex sm:items-center sm:ml-6">
+                <x-dropdown align="right" width="48">
+                    <x-slot name="trigger">
+                        <button class="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out">
+                            <div>{{ Auth::user()->name }}</div>
+
+                            <div class="ml-1">
+                                <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                        </button>
+                    </x-slot>
+
+                    <x-slot name="content">
+                        <!-- Authentication -->
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+
+                            <x-dropdown-link :href="route('logout')"
+                                    onclick="event.preventDefault();
+                                                this.closest('form').submit();">
+                                {{ __('Log Out') }}
+                            </x-dropdown-link>
+                        </form>
+                    </x-slot>
+                </x-dropdown>
+            </div>
+
+            <!-- Hamburger -->
+            <div class="-mr-2 flex items-center sm:hidden">
+                <button @click="open = ! open" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 focus:text-gray-500 transition duration-150 ease-in-out">
+                    <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                        <path :class="{'hidden': open, 'inline-flex': ! open }" class="inline-flex" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        <path :class="{'hidden': ! open, 'inline-flex': open }" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Responsive Navigation Menu -->
+    <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden">
+        <div class="pt-2 pb-3 space-y-1">
+            <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
+                {{ __('Dashboard') }}
+            </x-responsive-nav-link>
+            <x-responsive-nav-link :href="route('home')" :active="request()->routeIs('home')">
+                Добавить доход
+            </x-responsive-nav-link>
+            <x-responsive-nav-link :href="route('telegram')" :active="request()->routeIs('telegram')">
+                Телеграм
+            </x-responsive-nav-link>
+            <x-responsive-nav-link :href="route('create-slides')" :active="request()->routeIs('create-slides')">
+                Слайды
+            </x-responsive-nav-link>
+            <x-responsive-nav-link :href="route('convert-to-markdown')" :active="request()->routeIs('convert-to-markdown')">
+                Html to MD
+            </x-responsive-nav-link>
+        </div>
+
+        <!-- Responsive Settings Options -->
+        <div class="pt-4 pb-1 border-t border-gray-200">
+            <div class="px-4">
+                <div class="font-medium text-base text-gray-800">{{ Auth::user()->name }}</div>
+                <div class="font-medium text-sm text-gray-500">{{ Auth::user()->email }}</div>
+            </div>
+
+            <div class="mt-3 space-y-1">
+                <!-- Authentication -->
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+
+                    <x-responsive-nav-link :href="route('logout')"
+                            onclick="event.preventDefault();
+                                        this.closest('form').submit();">
+                        {{ __('Log Out') }}
+                    </x-responsive-nav-link>
+                </form>
+            </div>
+        </div>
+    </div>
+</nav>
+
+// resources/views/livewire/download-component.blade.php
+<div class="space-y-4">
+    <button wire:click="downloadSlide(1)" class="p-2 bg-blue-500 text-white rounded">Скачать слайд</button>
+    <button wire:click="downloadAllSlides" class="p-2 bg-green-500 text-white rounded">Скачать все слайды в архиве</button>
+</div>
+
+// resources/views/livewire/html-to-markdown-component.blade.php
+<div>
+    <div>
+        <label for="url" class="block text-sm">Введите URL статьи:</label>
+        <input type="text" wire:model="url" id="url" class="w-full p-2 border rounded" placeholder="URL статьи">
+    </div>
+    <div class="mt-4">
+        <label for="cssSelector" class="block text-sm">CSS путь к блоку статьи:</label>
+        <input type="text" wire:model="cssSelector" id="cssSelector" class="w-full p-2 border rounded" placeholder="CSS путь">
+    </div>
+    <button wire:click="convertToMarkdown" class="mt-2 p-2 bg-blue-500 text-white rounded">Конвертировать в Markdown</button>
+
+    @if($htmlContent)
+        <div class="mt-4">
+            <h3 class="text-lg font-bold">Полученный HTML:</h3>
+            <textarea readonly rows="10" class="w-full p-2 border rounded">{{ $htmlContent }}</textarea>
+        </div>
+    @endif
+
+    @if($markdown)
+        <div class="mt-4">
+            <h3 class="text-lg font-bold">Результат конвертации:</h3>
+            <textarea readonly rows="10" class="w-full p-2 border rounded">{{ $markdown }}</textarea>
+        </div>
+    @else
+        <div class="mt-4">
+            <h3 class="text-lg font-bold text-red-500">Ошибка:</h3>
+            <p class="text-red-500">Элемент с указанным селектором не найден.</p>
+        </div>
+    @endif
+</div>
+
+// resources/views/livewire/slide-preview-component.blade.php
+<div>
+    @foreach($slides as $index => $slide)
+        <div class="mb-4 border p-4 rounded">
+            <h2>Слайд {{ $index + 1 }}</h2>
+            <textarea wire:model.defer="slides.{{ $index }}.text" rows="5" class="w-full p-2 border rounded"></textarea>
+            <button wire:click="updateSlide({{ $index }})">Обновить слайд</button>
+            @if(isset($slide['preview']))
+                <div class="mt-4">
+                    <h3 class="text-lg font-bold">Превью слайда:</h3>
+                    <img src="{{ asset($slide['preview']) }}?{{ rand() }}" alt="Slide Preview" class="w-full h-auto">
+                    <button wire:click="downloadSlide({{ $index }})" class="mt-2 p-2 bg-green-500 text-white rounded">Скачать</button>
+                </div>
+            @endif
+        </div>
+    @endforeach
+        <!-- Новая кнопка для отправки через Telegram -->
+        <button wire:click="sendToTelegram" class="mt-2 p-2 bg-green-500 text-white rounded">Отправить в Telegram</button>
+    <div class="mt-4">
+        <button wire:click="downloadAllSlides" class="mt-2 p-2 bg-red-500 text-white rounded">Скачать все</button>
+    </div>
+</div>
+
+// resources/views/livewire/slide-settings-component.blade.php
+<div class="space-y-4">
+    <div>
+        <label for="background" class="block text-sm">Выбор фона:</label>
+        <select wire:model="background" id="background" class="w-full p-2 border rounded">
+            <option value="">Выбрать фон</option>
+            @foreach($backgrounds as $background)
+                <option value="{{ $background }}">{{ $background }}</option>
+            @endforeach
+        </select>
+        <input type="file" wire:model="newBackground" class="mt-2">
+        <button wire:click="uploadNewBackground" class="mt-2 p-2 bg-blue-500 text-white rounded">Загрузить новый фон</button>
+    </div>
+    <div>
+        <label for="font">Шрифт:</label>
+        <select wire:model="font" id="font" class="w-full p-2 border rounded">
+            @foreach ($fonts as $font)
+                <option value="{{ $font }}">{{ $font }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div>
+        <label for="margin" class="block text-sm">Отступы:</label>
+        <input type="number" wire:model="margin" id="margin" class="w-full p-2 border rounded" placeholder="Отступы">
+    </div>
+    <div>
+        <label for="char_limit" class="block text-sm">Число символов:</label>
+        <input type="number" wire:model="char_limit" id="char_limit" class="w-full p-2 border rounded" placeholder="Число символов">
+    </div>
+    <div>
+        <label for="font_size" class="block text-sm">Размер шрифта:</label>
+        <input type="number" wire:model="font_size" id="font_size" class="w-full p-2 border rounded" placeholder="Размер шрифта">
+    </div>
+    <div>
+        <label for="line_height" class="block text-sm">Высота строки:</label>
+        <input type="number" wire:model="line_height" id="line_height" class="w-full p-2 border rounded" placeholder="Высота строки">
+    </div>
+    <button wire:click="updateSettings" class="mt-2 p-2 bg-blue-500 text-white rounded">Сохранить настройки</button>
+</div>
+
+// resources/views/livewire/text-editor-component.blade.php
+<div>
+    <textarea wire:model.defer="text" wire:blur="splitText" rows="10" class="w-full p-2 border rounded" placeholder="Введите текст статьи..."></textarea>
+    <div class="mt-4">
+        <label for="initialTextLength" class="block text-sm">Длина первой части статьи:</label>
+        <input type="number" wire:model="initial_text_length" id="initialTextLength" class="w-full p-2 border rounded" placeholder="Длина первой части">
+    </div>
+    <div class="mt-4">
+        <label for="optimizeImages" class="block text-sm">Оптимизировать изображения:</label>
+        <input type="checkbox" wire:model="optimizeImages" id="optimizeImages" class="mr-2" checked>
+    </div>
+    <div class="mt-4">
+        <p class="text-sm text-gray-600">Добавьте двойные пустые строки в Markdown, чтобы перенести текст на новые слайды.</p>
+    </div>
+    <button wire:click="splitText" class="mt-2 p-2 bg-blue-500 text-white rounded">Разделить текст</button>
+
+    @if($initial_text)
+        <div class="mt-4">
+            <h3 class="text-lg font-bold">Первая часть статьи:</h3>
+            <textarea readonly rows="5" class="w-full p-2 border rounded">{{ $initial_text }}</textarea>
+        </div>
+    @endif
+</div>
+
+// resources/views/livewire/user-settings-component.blade.php
+<div>
+    <h3 class="text-lg font-semibold mb-4">Личные настройки</h3>
+    <ul class="mb-4">
+        @foreach($templates as $template)
+            <li class="flex justify-between items-center mb-2 p-2 border rounded">
+                <span>{{ $template['name'] }}</span>
+                <button wire:click="loadTemplate({{ $template['id'] }})" class="p-2 bg-blue-500 text-white rounded">Загрузить</button>
+            </li>
+        @endforeach
+    </ul>
+    <button wire:click="saveSettings" class="p-2 bg-green-500 text-white rounded">Сохранить текущие настройки как шаблон</button>
+</div>
+
+// resources/views/slides/create.blade.php
+<x-app-layout>
+
+    <x-slot name="page_title">
+        Слайды
+    </x-slot>
+    <x-slot name="header" class="text-center">
+        
+    </x-slot>
+
+
+    <div class="container mx-auto mt-8">
+        <h1 class="text-2xl font-bold mb-6">Создание слайдов для Instagram</h1>
+    
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Левая колонка -->
+            <div>
+                <div class="mb-6">
+                    @livewire('text-editor-component')
+                </div>
+                <div class="mb-6">
+                    @livewire('slide-settings-component')
+                </div>
+            </div>
+    
+            <!-- Правая колонка -->
+            <div>
+                <div class="mb-6">
+                    @livewire('slide-preview-component')
+                </div>
+                <div class="mb-6">
+                    @livewire('user-settings-component')
+                </div>
+                <div class="mb-6">
+                    @livewire('download-component')
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+</x-app-layout>
+
+// resources/views/convert-html-to-markdown.blade.php
+<x-app-layout>
+    <x-slot name="page_title">
+        Html to MD
+    </x-slot>
+    <x-slot name="header" class="text-center">
+        
+    </x-slot>
+
+    <livewire:html-to-markdown-component />
+
+</x-app-layout>
+
+// resources/views/dashboard.blade.php
+<x-app-layout>
+    <x-slot name="header">
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+            {{ __('Dashboard') }}
+        </h2>
+    </x-slot>
+
+    <div class="py-12">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="p-6 bg-white border-b border-gray-200">
+                    You're logged in!
+                </div>
+            </div>
+        </div>
+    </div>
+</x-app-layout>
+

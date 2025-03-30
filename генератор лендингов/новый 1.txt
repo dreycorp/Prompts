@@ -1,0 +1,1960 @@
+// resources/views/preview.blade.php
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ $page->seo_title ?? $page->title }}</title>
+    @if($page->custom_css_classes)
+        <style>
+            {{ $page->custom_css_classes }}
+        </style>
+    @endif
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+{!! $page->content !!}
+@if($page->custom_js_code)
+    <script>
+        {{ $page->custom_js_code }}
+    </script>
+@endif
+</body>
+</html>
+
+// app/Http/Controllers/BlockController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Block;
+use Illuminate\Http\Request;
+
+class BlockController extends Controller
+{
+    public function show(Block $block)
+    {
+           return response()->json(['html_code' => $block->html_code, 'preview' => $block->preview ? asset('storage/' . $block->preview) : null]);
+    }
+}
+
+// app/Http/Controllers/EditorController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\CategoryBlock;
+use App\Models\PageBuild;
+use Illuminate\Support\Str;
+
+
+class EditorController extends Controller
+{
+    public function show(PageBuild $page)
+    {
+        $categories = CategoryBlock::with(['blocks', 'elements'])->get();
+        $page->content = $this->addAttributes($page->content);
+        return view('editor', ['page' => $page, 'categories' => $categories]);
+    }
+
+    public function addAttributes(?string $content): string
+    {
+        if (!$content) {
+            return '';
+        }
+
+        $dom = new \DOMDocument();
+        libxml_use_internal_errors(true);
+        $dom->loadHTML(mb_convert_encoding($content, 'HTML-ENTITIES', 'UTF-8'));
+        libxml_clear_errors();
+        $xpath = new \DOMXPath($dom);
+
+        // Добавляем data-id и data-type к элементам
+        $this->processElements($xpath, '//*[contains(@class, "element-") or contains(@class, "block-")]', 'element', $dom);
+
+
+        return $dom->saveHTML();
+    }
+
+    public function processElements(\DOMXPath $xpath, string $query, string $type, \DOMDocument $dom): void
+    {
+        $elements = $xpath->query($query);
+        foreach ($elements as $element) {
+            if ($element instanceof \DOMElement) {
+                 $id = Str::uuid();
+                $element->setAttribute('data-id', $id);
+                $element->setAttribute('data-type', $type);
+                // Присваиваем id если его нет
+                if(!$element->getAttribute('id')){
+                     $element->setAttribute('id', 'element-' . $id);
+                }
+            }
+        }
+    }
+
+    public function savePage(Request $request, PageBuild $page)
+    {
+        // Валидация данных
+        $validated = $request->validate([
+            'content' => 'required|string',
+            // Добавьте другие необходимые поля
+        ]);
+
+          $validated['content'] =  $this->addAttributes($validated['content']);
+    
+        $page->update($validated);
+    
+        return response()->json(['message' => 'Страница успешно сохранена', 'content' => $page->content]);
+    }
+    
+    public function export(PageBuild $page)
+    {
+           return (new PageBuildController())->export($page);
+    }
+
+}
+
+// app/Http/Controllers/ElementController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Element;
+use Illuminate\Http\Request;
+
+class ElementController extends Controller
+{
+    public function show(Element $element)
+    {
+        return response()->json(['html_code' => $element->html_code, 'preview' => $element->preview ? asset('storage/' . $element->preview) : null]);
+    }
+}
+
+// app/Http/Controllers/ImageController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Intervention\Image\Facades\Image;
+
+class ImageController extends Controller
+{
+    public function upload(Request $request)
+    {
+        $request->validate([
+            'image' => 'required|image|max:2048', // Ограничение на размер и тип изображения
+        ]);
+
+        $image = $request->file('image');
+        $filename = time() . '_' . $image->getClientOriginalName();
+        $path = $image->storeAs('images', $filename, 'public');
+
+        // Генерация превью, если необходимо
+        // $previewPath = 'previews/' . $filename;
+        // Image::make($image)->resize(50, 50)->save(storage_path('app/public/' . $previewPath));
+
+        return response()->json(['url' => asset('storage/' . $path)]);
+    }
+}
+
+// app/Http/Controllers/PageBuildController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\PageBuild;
+use Illuminate\Http\Request;
+
+class PageBuildController extends Controller
+{
+    public function update(Request $request, PageBuild $page)
+    {
+        $validated = $request->validate([
+             'title' => 'required|string|max:255',
+             'url' => 'required|string|max:255',
+             'seo_title' => 'nullable|string|max:255',
+             'seo_description' => 'nullable|string',
+             'keywords' => 'nullable|string',
+              'logo' => 'nullable|string',
+             'custom_css_classes' => 'nullable|string',
+             'custom_js_code' => 'nullable|string',
+              'font_id' => 'nullable|integer',
+             'layout_id' => 'nullable|integer',
+             'content' => 'nullable|string',
+        ]);
+         $page->update($validated);
+         return response()->json(['message' => 'Страница успешно обновлена']);
+    }
+
+    public function export(PageBuild $page)
+    {
+        // Получите layout и контент
+        $layout = $page->layout ? $page->layout->html_code : '<!DOCTYPE html><html lang="ru"><head></head><body>{{content}}</body></html>';
+        $content = $page->content;
+    
+        // Вставьте контент в layout
+        $html = str_replace('{{content}}', $content, $layout);
+    
+        // Добавьте пользовательские CSS и JS
+        if ($page->custom_css_classes) {
+            $html = str_replace('</head>', "<style>{$page->custom_css_classes}</style></head>", $html);
+        }
+        if ($page->custom_js_code) {
+             $html = str_replace('</body>', "<script>{$page->custom_js_code}</script></body>", $html);
+        }
+
+          // Создайте временный файл
+        $filename = $page->url . '.html';
+        $path = storage_path('app/public/exports/' . $filename);
+        file_put_contents($path, $html);
+    
+        return response()->download($path)->deleteFileAfterSend(true);
+    }
+    public function preview(PageBuild $page)
+    {
+          // Получите layout и контент
+         $layout = $page->layout ? $page->layout->html_code : '<!DOCTYPE html><html lang="ru"><head></head><body>{{content}}</body></html>';
+        $content = $page->content;
+    
+        // Вставьте контент в layout
+        $html = str_replace('{{content}}', $content, $layout);
+          // Добавьте пользовательские CSS и JS
+        if ($page->custom_css_classes) {
+            $html = str_replace('</head>', "<style>{$page->custom_css_classes}</style></head>", $html);
+        }
+        if ($page->custom_js_code) {
+             $html = str_replace('</body>', "<script>{$page->custom_js_code}</script></body>", $html);
+        }
+        return response($html);
+    }
+}
+
+// app/Models/Block.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Block extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'title',
+        'category_id',
+        'html_code',
+        'preview',
+    ];
+
+
+    public function category()
+    {
+        return $this->belongsTo(CategoryBlock::class, 'category_id');
+    }
+}
+
+// app/Models/CategoryBlock.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class CategoryBlock extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'title'
+    ];
+
+    public function blocks()
+    {
+        return $this->hasMany(Block::class, 'category_id');
+    }
+
+    public function elements()
+    {
+       return $this->hasMany(Element::class, 'category_id');
+    }
+}
+
+// app/Models/Element.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Element extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'title',
+        'category_id',
+        'html_code',
+        'preview',
+    ];
+
+
+    public function category()
+    {
+        return $this->belongsTo(CategoryBlock::class, 'category_id');
+    }
+}
+
+// app/Models/Font.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Font extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'font_family',
+    ];
+}
+
+// app/Models/Layout.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Layout extends Model
+{
+    use HasFactory;
+    protected $fillable = [
+      'name',
+      'html_code'
+    ];
+}
+
+// app/Models/PageBuild.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use App\Http\Controllers\EditorController;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class PageBuild extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+       'title',
+       'url',
+       'seo_title',
+       'seo_description',
+       'keywords',
+       'logo',
+       'custom_css_classes',
+       'custom_js_code',
+        'font_id',
+       'layout_id',
+       'content',
+   ];
+
+
+   public function font()
+   {
+       return $this->belongsTo(Font::class);
+   }
+
+   public function layout()
+   {
+       return $this->belongsTo(Layout::class);
+   }
+   protected static function boot()
+  {
+      parent::boot();
+
+      static::updating(function ($page) {
+          // Если контент изменился, то генерируем data-id и data-type
+          if ($page->isDirty('content')) {
+              $page->content = (new EditorController())->addAttributes($page->content);
+          }
+      });
+  }
+
+}
+
+// database/migrations/2024_12_25_094257_create_blocks_table.php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('blocks', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->unsignedBigInteger('category_id')->nullable();
+            $table->longText('html_code');
+            $table->string('preview')->nullable();
+            $table->timestamps();
+
+            $table->foreign('category_id')->references('id')->on('category_blocks')->onDelete('set null');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('blocks');
+    }
+};
+
+// database/migrations/2024_12_25_094303_create_elements_table.php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('elements', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->unsignedBigInteger('category_id')->nullable();
+            $table->longText('html_code');
+            $table->string('preview')->nullable();
+             $table->timestamps();
+              $table->foreign('category_id')->references('id')->on('category_blocks')->onDelete('set null');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('elements');
+    }
+};
+
+// database/migrations/2024_12_25_094317_create_fonts_table.php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('fonts', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->text('font_family');
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('fonts');
+    }
+};
+
+// database/migrations/2024_12_25_094327_create_layouts_table.php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('layouts', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->text('html_code');
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('layouts');
+    }
+};
+
+// database/migrations/2024_12_25_094416_create_category_blocks_table.php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('category_blocks', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('category_blocks');
+    }
+};
+
+// database/migrations/2024_12_25_112355_create_page_builds_table.php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('page_builds', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->string('url')->unique();
+            $table->string('seo_title')->nullable();
+            $table->text('seo_description')->nullable();
+            $table->text('keywords')->nullable();
+            $table->string('logo')->nullable();
+            $table->text('custom_css_classes')->nullable();
+            $table->text('custom_js_code')->nullable();
+            $table->unsignedInteger('font_id')->nullable();
+            $table->unsignedInteger('layout_id')->nullable();
+            $table->text('content')->nullable();
+            $table->timestamps();
+
+            $table->foreign('font_id')->references('id')->on('fonts')
+            ->onDelete('set null');
+            $table->foreign('layout_id')->references('id')->on('layouts')->onDelete('set null');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('page_builds');
+    }
+};
+
+// resources/css/app.css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.hover-highlight {
+  outline: 2px dashed #4a90e2;
+  outline-offset: 2px;
+}
+.context-menu {
+  position: absolute;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  padding: 5px;
+  z-index: 1000;
+}
+
+.context-menu-item {
+  display: block;
+  padding: 5px 10px;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+.context-menu-item:hover {
+  background-color: #f0f0f0;
+}
+
+.rotate-180 {
+  transform: rotate(180deg);
+  transition: transform 0.3s ease;
+}
+
+// resources/js/components/block-component.js
+export default () => ({
+    init() {
+        console.log('init block component');
+    },
+});
+
+// resources/js/components/editor.js
+import { v4 as uuidv4 } from 'uuid';
+import axios from 'axios';
+export default () => ({
+    isDragging: false,
+    pageId: null,
+    pageContent: '',
+      highlightedElement: null,
+      
+       init(){
+        this.pageId = document.querySelector('main').getAttribute('data-page-id');
+        this.pageContent = atob(document.querySelector('main').getAttribute('data-page-content'));
+         console.log('init editor component', this.pageId, this.pageContent)
+        // ==== ЛЕВЫЙ КЛИК ====
+        document.addEventListener('click', (event) => {
+            // Проверяем, что это действительно левый клик (button = 0)
+            if (event.button === 0) {
+                // Ищем ближайший элемент с data-id
+                let target = event.target.closest('[data-id]');
+                if (target) {
+                    // Если кликнули по элементу -> выбираем его
+                    this.selectElement(target);
+                } else {
+                    // Кликнули по пустому месту -> убираем выделение
+                    this.clearSelection();
+                }
+                // Любой левый клик прячет контекстное меню
+                this.hideContextMenu();
+            }
+        });
+
+        // ==== ПРАВЫЙ КЛИК ====
+        document.addEventListener('contextmenu', (event) => {
+            let target = event.target.closest('[data-id]');
+            if (target) {
+                // Останавливаем стандартное контекстное меню браузера
+                event.preventDefault();
+                // Не выбираем элемент, чтобы панель не открывалась
+                // а только показываем контекстное меню:
+                this.showContextMenu(event, target);
+            } else {
+                // Кликнули правой по пустому месту -> скрываем меню
+                this.clearSelection();
+                this.hideContextMenu();
+            }
+        });
+        document.addEventListener('clone-element', (event) => {
+            this.cloneElement(event.detail.id);
+        });
+        document.addEventListener('remove-element', (event) => {
+            this.removeElement(event.detail.id);
+        });
+        document.addEventListener('edit-code', (event) => {
+            this.editCode(event.detail.id);
+        });
+         document.addEventListener('save-page', () => {
+             this.savePage();
+         });
+      },
+    handleDrop(event) {
+        console.log('handleDrop')
+        this.isDragging = false;
+        const typeAndId = event.dataTransfer.getData('text/plain');
+        const [type, id] = typeAndId.split('-');
+        if (type === 'block') {
+            this.addBlockToPage(id);
+        } else if (type === 'element') {
+           if(event.target.classList.contains('page-content')){
+               this.addElementToPage(id, event.target);
+           } else {
+               this.handleElementDrop(event, id);
+           }
+        }
+    },
+    handleElementDrop(event, elementId){
+        console.log('handleElementDrop')
+        event.preventDefault();
+         let target = event.target;
+       // Ищем ближайший родительский элемент с data-id
+        while (target && !target.getAttribute('data-id')) {
+            target = target.parentElement;
+        }
+           if (target) {
+                this.addElementToPage(elementId, target);
+            }
+    },
+    addBlockToPage(blockId) {
+         console.log('addBlockToPage', blockId)
+        axios.get(`/getblocks/${blockId}`).then(response => {
+            const blockHTML = response.data.html_code;
+            let newBlockId = uuidv4();
+            const tempElement = document.createElement('div');
+            tempElement.innerHTML = blockHTML;
+            const firstChild = tempElement.firstElementChild;
+            if (firstChild) {
+                firstChild.setAttribute('data-id', newBlockId);
+                firstChild.setAttribute('data-type', 'block')
+                 // Присваиваем id если его нет
+                if(!firstChild.getAttribute('id')){
+                   firstChild.setAttribute('id', 'block-' + newBlockId);
+                }
+                  if(response.data.preview){
+                       let img = firstChild.querySelector('img');
+                       if(img){
+                           img.setAttribute('src', response.data.preview);
+                       }
+                   }
+                this.pageContent = this.pageContent ? this.pageContent + tempElement.innerHTML : tempElement.innerHTML;
+                 this.$nextTick(() => {
+                     this.updateElement();
+                 })
+            }
+        }).catch(error => {
+            console.error('Error fetching block:', error);
+            alert('Ошибка загрузки блока: ' + error.message);
+        });
+    },
+    addElementToPage(elementId, target) {
+           console.log('addElementToPage', elementId, target)
+          axios.get(`/getelements/${elementId}`).then(response => {
+            const elementHTML = response.data.html_code;
+              let newElementId =  uuidv4();
+              const tempElement = document.createElement('div');
+            tempElement.innerHTML = elementHTML;
+            const firstChild = tempElement.firstElementChild;
+              if (firstChild) {
+                  firstChild.setAttribute('data-id', newElementId);
+                  firstChild.setAttribute('data-type', 'element')
+                  // Присваиваем id если его нет
+                  if(!firstChild.getAttribute('id')){
+                      firstChild.setAttribute('id', 'element-' + newElementId);
+                  }
+                   if(response.data.preview){
+                      let img = firstChild.querySelector('img');
+                       if(img){
+                            img.setAttribute('src', response.data.preview);
+                        }
+                    }
+                 target.insertAdjacentHTML('beforeend', tempElement.innerHTML);
+                  this.$nextTick(() => {
+                      this.updateElement();
+                  })
+              }
+        }).catch(error => {
+            console.error('Error fetching element:', error);
+            alert('Ошибка загрузки элемента: ' + error.message);
+        });
+    },
+    // Показываем контекстное меню (для правого клика)
+    showContextMenu(event, target) {
+        event.preventDefault();
+        this.hideContextMenu(); // Сначала убираем предыдущее меню
+
+        const menu = document.createElement('div');
+        menu.classList.add('context-menu');
+        // Задаём координаты там, где был клик
+        menu.style.left = event.clientX + 'px';
+        menu.style.top = event.clientY + 'px';
+
+        const dataId = target.getAttribute('data-id');
+        menu.innerHTML = `
+            <button class="context-menu-item"
+                    @click="$dispatch('clone-element', { id: '${dataId}' })">
+                Клонировать
+            </button>
+            <button class="context-menu-item"
+                    @click="$dispatch('remove-element', { id: '${dataId}' })">
+                Удалить
+            </button>
+            <button class="context-menu-item"
+                    @click="$dispatch('edit-code', { id: '${dataId}' })">
+                Редактировать код
+            </button>
+        `;
+
+        // Добавляем во всю страницу
+        document.body.appendChild(menu);
+
+        // Закрыть меню при клике вне его
+        document.addEventListener('click', (evt) => {
+            if (menu && !menu.contains(evt.target)) {
+                this.hideContextMenu();
+            }
+        }, { once: true });
+    },
+    clearSelection() {
+        Alpine.store('editorStore').selectedElement = null;
+    },
+    hideContextMenu() {
+        // Убираем все div.context-menu
+        document.querySelectorAll('.context-menu').forEach(menu => {
+            menu.remove();
+        });
+    },
+      cloneElement(elementId) {
+          console.log('cloneElement', elementId)
+        this.hideContextMenu();
+        let element = document.querySelector(`[data-id="${elementId}"]`);
+        if (element) {
+            let clonedElement = element.cloneNode(true);
+            let newElementId =  Math.random().toString(36).substring(2, 15);
+            clonedElement.setAttribute('data-id', newElementId)
+            if(clonedElement.id){
+                clonedElement.id = 'element-' + newElementId
+            }
+            clonedElement.querySelectorAll('[data-id]').forEach(el => {
+                let newId =  Math.random().toString(36).substring(2, 15);
+                el.setAttribute('data-id', newId);
+                if(el.id){
+                    el.id = 'element-' + newId;
+                }
+            });
+           element.parentNode.insertBefore(clonedElement, element.nextSibling);
+        }
+         this.$nextTick(() => {
+            this.updateElement();
+        })
+    },
+    removeElement(elementId) {
+        console.log('removeElement', elementId)
+        this.hideContextMenu();
+        let element = document.querySelector(`[data-id="${elementId}"]`);
+        if (element) {
+            element.remove();
+        }
+         this.$nextTick(() => {
+            this.updateElement();
+        })
+    },
+     savePage() {
+        console.log('savePage')
+        axios.put(`/page-builds/${this.pageId}`, {
+            content: this.pageContent,
+        })
+        .then(response => {
+             this.pageContent = response.data.content;
+            this.$nextTick(() => {
+                 this.updateElement();
+            })
+            alert(response.data.message);
+        })
+        .catch(error => {
+            console.error('Ошибка сохранения страницы:', error);
+            alert('Ошибка сохранения страницы: ' + error.message);
+        });
+    },
+    exportPage() {
+         console.log('exportPage')
+        axios.get(`/page-builds/${this.pageId}/export`)
+            .then(response => {
+                const blob = new Blob([response.data], { type: 'text/html' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${this.pageId}.html`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+            })
+            .catch(error => {
+                console.error('Ошибка экспорта страницы:', error);
+                  alert('Ошибка экспорта страницы: ' + error.message);
+            });
+    },
+      previewPage() {
+           console.log('previewPage')
+        window.open(`/pages/${this.pageId}/preview`, '_blank');
+    },
+    updateElement() {
+         console.log('updateElement')
+        this.pageContent = document.getElementById('page-content').innerHTML;
+    },
+     editCode(elementId) {
+          console.log('editCode', elementId)
+        this.hideContextMenu();
+       this.editCode(elementId);
+    },
+  highlightElement(event) {
+         console.log('highlightElement')
+         let target = event.target;
+       // Ищем ближайший родительский элемент с data-id
+        while (target && !target.getAttribute('data-id')) {
+            target = target.parentElement;
+        }
+         if (target) {
+             this.removeHighlight();
+             target.classList.add('hover-highlight');
+            this.highlightedElement = target;
+        }
+    },
+    removeHighlight() {
+         console.log('removeHighlight')
+       if (this.highlightedElement) {
+            this.highlightedElement.classList.remove('hover-highlight');
+            this.highlightedElement = null;
+        }
+    },
+     selectElement(target) {
+         console.log('selectElement', target)
+        if(target &&  ['BUTTON', 'A', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN'].includes(target.tagName)){
+            let elementId = target.getAttribute('data-id');
+            let type = target.getAttribute('data-type');
+            let cssClasses = target.getAttribute('class') ? target.getAttribute('class') : '';
+            let id = target.getAttribute('id') ? target.getAttribute('id') : '';
+            let isText = target.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+            let isImage = target.querySelector('img');
+            let text = isText ? isText.textContent : '';
+            let imageUrl = isImage ? isImage.getAttribute('src') : '';
+            let textSize = isText ?  isText.style.fontSize : 16;
+            let textColor = isText ? isText.style.color : '#000000';
+            let isBold = isText ?  isText.style.fontWeight === 'bold' : false;
+            let isItalic = isText ?  isText.style.fontStyle === 'italic' : false;
+
+            Alpine.store('editorStore').selectedElement = {
+                type: type,
+                id: id,
+                cssClasses: cssClasses,
+                text: text,
+                imageUrl: imageUrl,
+                isText: !!isText,
+                isImage: !!isImage,
+                elementId: elementId,
+                textColor: textColor,
+                textSize: textSize,
+                isBold: isBold,
+                isItalic: isItalic,
+            }
+            this.blockCssClasses = type === 'block' ? cssClasses : '';
+            this.blockId = type === 'block' ? id : '';
+            this.elementCssClasses = type === 'element' ? cssClasses : '';
+            this.elementId = type === 'element' ? id : '';
+            this.elementText = type === 'element' && isText ? text : '';
+            this.elementImageUrl = type === 'element' && isImage ? imageUrl : '';
+             this.elementTextColor = type === 'element' && isText ? textColor : '#000000';
+            this.elementTextSize = type === 'element' && isText ? textSize : 16;
+        }
+          if(target && ['IMG'].includes(target.tagName)){
+             let elementId = target.getAttribute('data-id');
+            let type = target.getAttribute('data-type');
+            let cssClasses = target.getAttribute('class') ? target.getAttribute('class') : '';
+            let id = target.getAttribute('id') ? target.getAttribute('id') : '';
+            let isText = target.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+            let isImage = target.querySelector('img');
+            let text = isText ? isText.textContent : '';
+            let imageUrl = isImage ? isImage.getAttribute('src') : '';
+              let textSize = isText ?  isText.style.fontSize : 16;
+             let textColor = isText ? isText.style.color : '#000000';
+              let isBold = isText ?  isText.style.fontWeight === 'bold' : false;
+              let isItalic = isText ?  isText.style.fontStyle === 'italic' : false;
+            Alpine.store('editorStore').selectedElement = {
+                type: type,
+                id: id,
+                cssClasses: cssClasses,
+                text: text,
+                imageUrl: imageUrl,
+                isText: !!isText,
+                isImage: !!isImage,
+                elementId: elementId,
+                textColor: textColor,
+                 textSize: textSize,
+                 isBold: isBold,
+                 isItalic: isItalic,
+            }
+            this.blockCssClasses = type === 'block' ? cssClasses : '';
+            this.blockId = type === 'block' ? id : '';
+            this.elementCssClasses = type === 'element' ? cssClasses : '';
+            this.elementId = type === 'element' ? id : '';
+             this.elementText = type === 'element' && isText ? text : '';
+            this.elementImageUrl = type === 'element' && isImage ? imageUrl : '';
+             this.elementTextColor = type === 'element' && isText ? textColor : '#000000';
+            this.elementTextSize = type === 'element' && isText ? textSize : 16;
+        }
+      if(target &&  ['DIV', 'SECTION', 'FOOTER', 'HEADER'].includes(target.tagName)){
+           let elementId = target.getAttribute('data-id');
+            let type = target.getAttribute('data-type');
+            let cssClasses = target.getAttribute('class') ? target.getAttribute('class') : '';
+            let id = target.getAttribute('id') ? target.getAttribute('id') : '';
+            let isText = target.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+            let isImage = target.querySelector('img');
+            let text = isText ? isText.textContent : '';
+            let imageUrl = isImage ? isImage.getAttribute('src') : '';
+             let textSize = isText ?  isText.style.fontSize : 16;
+             let textColor = isText ? isText.style.color : '#000000';
+              let isBold = isText ?  isText.style.fontWeight === 'bold' : false;
+              let isItalic = isText ?  isText.style.fontStyle === 'italic' : false;
+              let backgroundImage = target.style.backgroundImage ? target.style.backgroundImage.slice(5, -2) : '';
+               let backgroundColor = target.style.backgroundColor ? target.style.backgroundColor : '';
+              let parallax = target.style.backgroundAttachment === 'fixed';
+            Alpine.store('editorStore').selectedElement = {
+                type: type,
+                id: id,
+                cssClasses: cssClasses,
+                text: text,
+                imageUrl: imageUrl,
+                isText: !!isText,
+                isImage: !!isImage,
+                elementId: elementId,
+                 textColor: textColor,
+                 textSize: textSize,
+                isBold: isBold,
+                isItalic: isItalic,
+            }
+            this.blockCssClasses = type === 'block' ? cssClasses : '';
+            this.blockId = type === 'block' ? id : '';
+            this.elementCssClasses = type === 'element' ? cssClasses : '';
+            this.elementId = type === 'element' ? id : '';
+              this.elementText = type === 'element' && isText ? text : '';
+            this.elementImageUrl = type === 'element' && isImage ? imageUrl : '';
+              this.elementTextColor = type === 'element' && isText ? textColor : '#000000';
+            this.elementTextSize = type === 'element' && isText ? textSize : 16;
+             this.elementBackgroundUrl = backgroundImage;
+               this.elementBackgroundColor = backgroundColor;
+              this.elementParallax = parallax;
+        }
+    },
+       handleImageChange(event) {
+           console.log('handleImageChange')
+        const file = event.target.files[0];
+        if (file) {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            axios.post('/admin/upload-image', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+            .then(response => {
+                this.elementImageUrl = response.data.url;
+                 this.applyStyle('src',  this.elementImageUrl );
+            })
+            .catch(error => {
+                console.error('Ошибка загрузки изображения:', error);
+            });
+        }
+    },
+      handleBackgroundChange(event) {
+          console.log('handleBackgroundChange')
+        const file = event.target.files[0];
+        if (file) {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            axios.post('/admin/upload-image', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+            .then(response => {
+                 this.elementBackgroundUrl = response.data.url;
+                  this.applyBackgroundStyle('background-image', `url('${this.elementBackgroundUrl}')`);
+            })
+            .catch(error => {
+                console.error('Ошибка загрузки изображения:', error);
+            });
+        }
+    },
+      toggleStyle(style) {
+           console.log('toggleStyle', style)
+        if (style === 'bold') {
+            Alpine.store('editorStore').selectedElement.isBold = !Alpine.store('editorStore').selectedElement.isBold;
+            this.applyTextStyle('font-weight', Alpine.store('editorStore').selectedElement.isBold ? 'bold' : 'normal');
+        }
+        if (style === 'italic') {
+            Alpine.store('editorStore').selectedElement.isItalic = !Alpine.store('editorStore').selectedElement.isItalic;
+            this.applyTextStyle('font-style', Alpine.store('editorStore').selectedElement.isItalic ? 'italic' : 'normal');
+        }
+    },
+    applyStyle(property, value){
+         console.log('applyStyle', property, value)
+          const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+        if (element) {
+             if(Alpine.store('editorStore').selectedElement.isText){
+               let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                if (textElement) {
+                  textElement.setAttribute(property, value);
+                }
+             }  else  if (Alpine.store('editorStore').selectedElement.isImage){
+                   let imageElement = element.querySelector('img');
+                    if (imageElement) {
+                        imageElement.setAttribute(property, value);
+                    }
+             }
+              this.$dispatch('update-page');
+        }
+    },
+     applyTextStyle(property, value) {
+         console.log('applyTextStyle', property, value)
+        const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+        if (element) {
+            if(Alpine.store('editorStore').selectedElement.isText){
+                let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                if (textElement) {
+                    textElement.style[property] = value;
+                }
+            }
+               this.$dispatch('update-page');
+        }
+    },
+      applyBackgroundStyle(property, value) {
+           console.log('applyBackgroundStyle', property, value)
+        const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+        if (element) {
+            element.style[property] = value;
+               this.$dispatch('update-page');
+        }
+    },
+       applyParallaxStyle() {
+           console.log('applyParallaxStyle')
+        const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+         if (element) {
+             element.style.backgroundAttachment = this.elementParallax ? 'fixed' : 'scroll';
+                 this.$dispatch('update-page');
+         }
+    },
+     applySectionWidth(width) {
+         console.log('applySectionWidth', width)
+        const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+        if (element) {
+              element.classList.remove('w-full', 'container', 'space-x-2');
+               element.classList.add(width);
+            this.$dispatch('update-page');
+        }
+    },
+     editCode(elementId) {
+          console.log('editCode', elementId)
+        const element = document.querySelector(`[data-id="${elementId}"]`);
+         if(element){
+             Alpine.store('editorStore').selectedElement = {
+                 type: element.getAttribute('data-type'),
+                 id: element.getAttribute('id'),
+                 elementId: elementId,
+             };
+            this.showModal = true;
+              this.modalCode = element.outerHTML;
+           }
+    },
+     updateClasses() {
+         console.log('updateClasses')
+          const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+        if(element){
+            element.setAttribute('class', Alpine.store('editorStore').selectedElement.type === 'block' ? this.blockCssClasses : this.elementCssClasses);
+            this.$dispatch('update-page');
+        }
+    },
+    updateId() {
+         console.log('updateId')
+          const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+        if(element){
+           element.setAttribute('id', Alpine.store('editorStore').selectedElement.type === 'block' ? this.blockId : this.elementId);
+            this.$dispatch('update-page');
+        }
+    },
+      updateText() {
+          console.log('updateText')
+          const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+        if(element){
+             if(Alpine.store('editorStore').selectedElement.isText){
+                   let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                   if (textElement) {
+                        textElement.textContent = this.elementText;
+                   }
+                }
+            this.$dispatch('update-page');
+        }
+    },
+     updateBackgroundColor() {
+         console.log('updateBackgroundColor')
+            const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+        if (element) {
+               element.style.backgroundColor = this.elementBackgroundColor;
+                this.$dispatch('update-page');
+        }
+    },
+     updateTextColor() {
+          console.log('updateTextColor')
+         const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+            if (element) {
+                if(Alpine.store('editorStore').selectedElement.isText){
+                    let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                    if (textElement) {
+                        textElement.style.color = this.elementTextColor;
+                    }
+                 }
+            this.$dispatch('update-page');
+        }
+    },
+     updateTextSize() {
+        console.log('updateTextSize')
+          const element = document.getElementById(Alpine.store('editorStore').selectedElement.id);
+            if (element) {
+                  if(Alpine.store('editorStore').selectedElement.isText){
+                      let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                        if (textElement) {
+                            textElement.style.fontSize = this.elementTextSize + 'px';
+                         }
+                  }
+                 this.$dispatch('update-page');
+        }
+    }
+});
+
+// resources/js/components/element-component.js
+export default () => ({
+    init() {
+        console.log('init element component');
+    },
+});
+
+// resources/js/components/element-editor.js
+import axios from 'axios';
+export default () => ({
+    //selectedElement: null,
+    blockCssClasses: '',
+    blockId: '',
+    elementCssClasses: '',
+    elementId: '',
+    elementText: '',
+    elementImageUrl: '',
+    elementBackgroundColor: '#ffffff',
+    elementBackgroundUrl: '',
+    elementTextColor: '#000000',
+    elementTextSize: 16,
+    elementParallax: false,
+    showModal: false,
+    modalCode: '',
+    get selectedElement() {
+        return Alpine.store('editorStore').selectedElement;
+    },
+    init() {
+        console.log('init element editor');
+    },
+    
+    applyCode() {
+        console.log('applyCode')
+        const element = document.querySelector(`[data-id="${this.selectedElement.elementId}"]`);
+        if (element) {
+            element.outerHTML = this.modalCode;
+            this.$nextTick(() => {
+                this.$dispatch('update-page');
+            })
+        }
+        this.showModal = false;
+        this.modalCode = '';
+    },
+    selectElement(target) {
+        console.log('selectElement', target)
+        if (target && ['BUTTON', 'A', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN'].includes(target.tagName)) {
+            let elementId = target.getAttribute('data-id');
+            let type = target.getAttribute('data-type');
+            let cssClasses = target.getAttribute('class') ? target.getAttribute('class') : '';
+            let id = target.getAttribute('id') ? target.getAttribute('id') : '';
+            let isText = target.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+            let isImage = target.querySelector('img');
+            let text = isText ? isText.textContent : '';
+            let imageUrl = isImage ? isImage.getAttribute('src') : '';
+            let textSize = isText ? isText.style.fontSize : 16;
+            let textColor = isText ? isText.style.color : '#000000';
+            let isBold = isText ? isText.style.fontWeight === 'bold' : false;
+            let isItalic = isText ? isText.style.fontStyle === 'italic' : false;
+
+            this.selectedElement = {
+                type: type,
+                id: id,
+                cssClasses: cssClasses,
+                text: text,
+                imageUrl: imageUrl,
+                isText: !!isText,
+                isImage: !!isImage,
+                elementId: elementId,
+                textColor: textColor,
+                textSize: textSize,
+                isBold: isBold,
+                isItalic: isItalic,
+            }
+            this.blockCssClasses = type === 'block' ? cssClasses : '';
+            this.blockId = type === 'block' ? id : '';
+            this.elementCssClasses = type === 'element' ? cssClasses : '';
+            this.elementId = type === 'element' ? id : '';
+            this.elementText = type === 'element' && isText ? text : '';
+            this.elementImageUrl = type === 'element' && isImage ? imageUrl : '';
+            this.elementTextColor = type === 'element' && isText ? textColor : '#000000';
+            this.elementTextSize = type === 'element' && isText ? textSize : 16;
+        }
+        if (target && ['IMG'].includes(target.tagName)) {
+            let elementId = target.getAttribute('data-id');
+            let type = target.getAttribute('data-type');
+            let cssClasses = target.getAttribute('class') ? target.getAttribute('class') : '';
+            let id = target.getAttribute('id') ? target.getAttribute('id') : '';
+            let isText = target.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+            let isImage = target.querySelector('img');
+            let text = isText ? isText.textContent : '';
+            let imageUrl = isImage ? isImage.getAttribute('src') : '';
+            let textSize = isText ? isText.style.fontSize : 16;
+            let textColor = isText ? isText.style.color : '#000000';
+            let isBold = isText ? isText.style.fontWeight === 'bold' : false;
+            let isItalic = isText ? isText.style.fontStyle === 'italic' : false;
+            this.selectedElement = {
+                type: type,
+                id: id,
+                cssClasses: cssClasses,
+                text: text,
+                imageUrl: imageUrl,
+                isText: !!isText,
+                isImage: !!isImage,
+                elementId: elementId,
+                textColor: textColor,
+                textSize: textSize,
+                isBold: isBold,
+                isItalic: isItalic,
+            }
+            this.blockCssClasses = type === 'block' ? cssClasses : '';
+            this.blockId = type === 'block' ? id : '';
+            this.elementCssClasses = type === 'element' ? cssClasses : '';
+            this.elementId = type === 'element' ? id : '';
+            this.elementText = type === 'element' && isText ? text : '';
+            this.elementImageUrl = type === 'element' && isImage ? imageUrl : '';
+            this.elementTextColor = type === 'element' && isText ? textColor : '#000000';
+            this.elementTextSize = type === 'element' && isText ? textSize : 16;
+        }
+        if (target && ['DIV', 'SECTION'].includes(target.tagName)) {
+            let elementId = target.getAttribute('data-id');
+            let type = target.getAttribute('data-type');
+            let cssClasses = target.getAttribute('class') ? target.getAttribute('class') : '';
+            let id = target.getAttribute('id') ? target.getAttribute('id') : '';
+            let isText = target.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+            let isImage = target.querySelector('img');
+            let text = isText ? isText.textContent : '';
+            let imageUrl = isImage ? isImage.getAttribute('src') : '';
+            let textSize = isText ? isText.style.fontSize : 16;
+            let textColor = isText ? isText.style.color : '#000000';
+            let isBold = isText ? isText.style.fontWeight === 'bold' : false;
+            let isItalic = isText ? isText.style.fontStyle === 'italic' : false;
+            let backgroundImage = target.style.backgroundImage ? target.style.backgroundImage.slice(5, -2) : '';
+            let backgroundColor = target.style.backgroundColor ? target.style.backgroundColor : '';
+            let parallax = target.style.backgroundAttachment === 'fixed';
+            this.selectedElement = {
+                type: type,
+                id: id,
+                cssClasses: cssClasses,
+                text: text,
+                imageUrl: imageUrl,
+                isText: !!isText,
+                isImage: !!isImage,
+                elementId: elementId,
+                textColor: textColor,
+                textSize: textSize,
+                isBold: isBold,
+                isItalic: isItalic,
+            }
+            this.blockCssClasses = type === 'block' ? cssClasses : '';
+            this.blockId = type === 'block' ? id : '';
+            this.elementCssClasses = type === 'element' ? cssClasses : '';
+            this.elementId = type === 'element' ? id : '';
+            this.elementText = type === 'element' && isText ? text : '';
+            this.elementImageUrl = type === 'element' && isImage ? imageUrl : '';
+            this.elementTextColor = type === 'element' && isText ? textColor : '#000000';
+            this.elementTextSize = type === 'element' && isText ? textSize : 16;
+            this.elementBackgroundUrl = backgroundImage;
+            this.elementBackgroundColor = backgroundColor ? backgroundColor : '#ffffff';
+            this.elementParallax = parallax;
+        }
+
+    },
+    handleImageChange(event) {
+        console.log('handleImageChange')
+        const file = event.target.files[0];
+        if (file) {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            axios.post('/admin/upload-image', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+                .then(response => {
+                    this.elementImageUrl = response.data.url;
+                    this.applyStyle('src', this.elementImageUrl);
+                })
+                .catch(error => {
+                    console.error('Ошибка загрузки изображения:', error);
+                });
+        }
+    },
+    handleBackgroundChange(event) {
+        console.log('handleBackgroundChange')
+        const file = event.target.files[0];
+        if (file) {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            axios.post('/admin/upload-image', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+                .then(response => {
+                    this.elementBackgroundUrl = response.data.url;
+                    this.applyBackgroundStyle('background-image', `url('${this.elementBackgroundUrl}')`);
+                })
+                .catch(error => {
+                    console.error('Ошибка загрузки изображения:', error);
+                });
+        }
+    },
+    toggleStyle(style) {
+        console.log('toggleStyle', style)
+        if (style === 'bold') {
+            this.selectedElement.isBold = !this.selectedElement.isBold;
+            this.applyTextStyle('font-weight', this.selectedElement.isBold ? 'bold' : 'normal');
+        }
+        if (style === 'italic') {
+            this.selectedElement.isItalic = !this.selectedElement.isItalic;
+            this.applyTextStyle('font-style', this.selectedElement.isItalic ? 'italic' : 'normal');
+        }
+    },
+    applyStyle(property, value) {
+        console.log('applyStyle', property, value)
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            if (this.selectedElement.isText) {
+                let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                if (textElement) {
+                    textElement.setAttribute(property, value);
+                }
+            } else if (this.selectedElement.isImage) {
+                let imageElement = element.querySelector('img');
+                if (imageElement) {
+                    imageElement.setAttribute(property, value);
+                }
+            }
+            this.$dispatch('update-page');
+        }
+    },
+    applyTextStyle(property, value) {
+        console.log('applyTextStyle', property, value)
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            if (this.selectedElement.isText) {
+                let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                if (textElement) {
+                    textElement.style[property] = value;
+                }
+            }
+            this.$dispatch('update-page');
+        }
+    },
+    applyBackgroundStyle(property, value) {
+        console.log('applyBackgroundStyle', property, value)
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            element.style[property] = value;
+            this.$dispatch('update-page');
+        }
+    },
+    applyParallaxStyle() {
+        console.log('applyParallaxStyle')
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            element.style.backgroundAttachment = this.elementParallax ? 'fixed' : 'scroll';
+            this.$dispatch('update-page');
+        }
+    },
+    applySectionWidth(width) {
+        console.log('applySectionWidth', width)
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            element.classList.remove('w-full', 'container', 'space-x-2');
+            element.classList.add(width);
+            this.$dispatch('update-page');
+        }
+    },
+    editCode(elementId) {
+        console.log('editCode', elementId)
+        const element = document.querySelector(`[data-id="${elementId}"]`);
+        if (element) {
+            this.selectedElement = {
+                type: element.getAttribute('data-type'),
+                id: element.getAttribute('id'),
+                elementId: elementId,
+            };
+            this.showModal = true;
+            this.modalCode = element.outerHTML;
+        }
+    },
+    updateClasses() {
+        console.log('updateClasses')
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            element.setAttribute('class', this.selectedElement.type === 'block' ? this.blockCssClasses : this.elementCssClasses);
+            this.$dispatch('update-page');
+        }
+    },
+    updateId() {
+        console.log('updateId')
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            element.setAttribute('id', this.selectedElement.type === 'block' ? this.blockId : this.elementId);
+            this.$dispatch('update-page');
+        }
+    },
+    updateText() {
+        console.log('updateText')
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            if (this.selectedElement.isText) {
+                let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                if (textElement) {
+                    textElement.textContent = this.elementText;
+                }
+            }
+            this.$dispatch('update-page');
+        }
+    },
+    updateBackgroundColor() {
+        console.log('updateBackgroundColor')
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            element.style.backgroundColor = this.elementBackgroundColor;
+            this.$dispatch('update-page');
+        }
+    },
+    updateTextColor() {
+        console.log('updateTextColor')
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            if (this.selectedElement.isText) {
+                let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                if (textElement) {
+                    textElement.style.color = this.elementTextColor;
+                }
+            }
+            this.$dispatch('update-page');
+        }
+    },
+    updateTextSize() {
+        console.log('updateTextSize')
+        const element = document.getElementById(this.selectedElement.id);
+        if (element) {
+            if (this.selectedElement.isText) {
+                let textElement = element.querySelector('p, span, h1, h2, h3, h4, h5, h6');
+                if (textElement) {
+                    textElement.style.fontSize = this.elementTextSize + 'px';
+                }
+            }
+            this.$dispatch('update-page');
+        }
+    }
+});
+
+// resources/js/app.js
+import { v4 as uuidv4 } from 'uuid';
+import './bootstrap';
+import Alpine from 'alpinejs';
+import  elementEditor  from './components/element-editor';
+import blockComponent from './components/block-component';
+import elementComponent from './components/element-component';
+import editor from './components/editor'; 
+
+window.Alpine = Alpine;
+
+
+
+Alpine.data('editor', editor);
+Alpine.data('elementEditor', elementEditor);
+
+// Создаём глобальный стор "editorStore"
+Alpine.store('editorStore', {
+    selectedElement: null,
+    // любые другие поля
+  });
+
+Alpine.data('blockComponent', blockComponent);
+Alpine.data('elementComponent', elementComponent);
+
+Alpine.start();
+
+// resources/js/bootstrap.js
+import axios from 'axios';
+window.axios = axios;
+
+window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+
+// resources/views/partials/editor-element-panel.blade.php
+<div class="flex justify-between items-center mb-4">
+    <h3 class="text-lg font-bold">Редактирование элемента</h3>
+    <button @click="selectedElement = null" class="text-gray-500 hover:text-gray-700">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+    </button>
+</div>
+<div x-show="selectedElement && selectedElement.type === 'block'">
+    <h4 class="text-md font-bold mb-2">Блок</h4>
+    <div class="mb-2">
+        <label class="block text-gray-700 text-sm font-bold mb-2" for="block-css-classes">CSS классы:</label>
+        <input type="text" id="block-css-classes" x-model="blockCssClasses"  @input="updateClasses()" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+    </div>
+    <div class="mb-2">
+        <label class="block text-gray-700 text-sm font-bold mb-2" for="block-id">ID:</label>
+        <input type="text" id="block-id" x-model="blockId" @input="updateId()" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+    </div>
+</div>
+<div x-show="selectedElement && selectedElement.type === 'element'">
+    <h4 class="text-md font-bold mb-2">Элемент</h4>
+    <div class="mb-2">
+        <label class="block text-gray-700 text-sm font-bold mb-2" for="element-css-classes">CSS классы:</label>
+        <input type="text" id="element-css-classes" x-model="elementCssClasses" @input="updateClasses()" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+    </div>
+    <div class="mb-2">
+        <label class="block text-gray-700 text-sm font-bold mb-2" for="element-id">ID:</label>
+        <input type="text" id="element-id" x-model="elementId" @input="updateId()" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+    </div>
+    <div class="mb-2" x-show="selectedElement && selectedElement.isText">
+        <label class="block text-gray-700 text-sm font-bold mb-2" for="element-text">Текст:</label>
+        <textarea id="element-text" x-model="elementText" @input="updateText()" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+    </div>
+    <div class="mb-2" x-show="selectedElement && selectedElement.isImage">
+        <label class="block text-gray-700 text-sm font-bold mb-2">Изображение:</label>
+        <div class="flex items-center space-x-4">
+            <input type="text" id="element-image-url" x-model="elementImageUrl" placeholder="URL изображения" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            <input type="file" id="element-image-file" @change="handleImageChange($event)" class="hidden">
+            <label for="element-image-file" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded cursor-pointer">
+                Загрузить
+            </label>
+        </div>
+    </div>
+     <div class="mb-2" x-show="selectedElement && ['DIV', 'SECTION'].includes(selectedElement.id?.toUpperCase()?.split('-')[0])">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Фон:</label>
+            <div class="flex items-center space-x-4">
+                <input type="text" id="element-background-url" x-model="elementBackgroundUrl" placeholder="URL изображения" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                <input type="color" x-model="elementBackgroundColor" @input="updateBackgroundColor()" >
+                <input type="file" id="element-background-file" @change="handleBackgroundChange($event)" class="hidden">
+                <label for="element-background-file" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded cursor-pointer">
+                    Загрузить
+                </label>
+            </div>
+        </div>
+        <div class="mb-2" x-show="selectedElement && ['DIV', 'SECTION'].includes(selectedElement.id?.toUpperCase()?.split('-')[0])">
+        <label class="block text-gray-700 text-sm font-bold mb-2">Позиция фона:</label>
+        <div class="flex space-x-2">
+            <button @click="applyBackgroundStyle('background-position', 'left top')" class="px-2 py-1 rounded border">Left Top</button>
+            <button @click="applyBackgroundStyle('background-position', 'center top')" class="px-2 py-1 rounded border">Center Top</button>
+            <button @click="applyBackgroundStyle('background-position', 'right top')" class="px-2 py-1 rounded border">Right Top</button>
+             <button @click="applyBackgroundStyle('background-position', 'left center')" class="px-2 py-1 rounded border">Left Center</button>
+            <button @click="applyBackgroundStyle('background-position', 'center center')" class="px-2 py-1 rounded border">Center Center</button>
+            <button @click="applyBackgroundStyle('background-position', 'right center')" class="px-2 py-1 rounded border">Right Center</button>
+            <button @click="applyBackgroundStyle('background-position', 'left bottom')" class="px-2 py-1 rounded border">Left Bottom</button>
+            <button @click="applyBackgroundStyle('background-position', 'center bottom')" class="px-2 py-1 rounded border">Center Bottom</button>
+            <button @click="applyBackgroundStyle('background-position', 'right bottom')" class="px-2 py-1 rounded border">Right Bottom</button>
+        </div>
+     </div>
+           <div class="mb-2" x-show="selectedElement && ['DIV', 'SECTION'].includes(selectedElement.id?.toUpperCase()?.split('-')[0])">
+               <label class="block text-gray-700 text-sm font-bold mb-2">Параллакс:</label>
+               <input type="checkbox" x-model="elementParallax"  @change="applyParallaxStyle()" >
+           </div>
+            <div class="mb-2" x-show="selectedElement && selectedElement.type === 'element' && selectedElement.id?.toUpperCase()?.split('-')[0] === 'SECTION'">
+      <label class="block text-gray-700 text-sm font-bold mb-2">Ширина:</label>
+         <div class="flex space-x-2">
+                <button @click="applySectionWidth('w-full')" class="px-2 py-1 rounded border">Полная ширина</button>
+                 <button @click="applySectionWidth('container')" class="px-2 py-1 rounded border">По контейнеру</button>
+                <button @click="applySectionWidth('space-x-2')" class="px-2 py-1 rounded border">Space</button>
+         </div>
+</div>
+    <!-- Простые стили -->
+    <div x-show="selectedElement && selectedElement.type === 'element'">
+        <h4 class="text-md font-bold mb-2">Стили</h4>
+        <div class="mb-4" x-show="selectedElement && selectedElement.isText">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Стили:</label>
+            <div class="flex space-x-2">
+                <button @click="toggleStyle('bold')" :class="{ 'bg-gray-200': selectedElement && selectedElement.isBold }" class="px-2 py-1 rounded border">B</button>
+                <button @click="toggleStyle('italic')" :class="{ 'bg-gray-200': selectedElement && selectedElement.isItalic }" class="px-2 py-1 rounded border">I</button>
+                <input type="color" x-model="elementTextColor" @input="updateTextColor()">
+                <input type="number" x-model.number="elementTextSize" @input="updateTextSize()" placeholder="Размер шрифта" class="shadow appearance-none border rounded w-16 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            </div>
+        </div>
+    </div>
+</div>
+
+// resources/views/partials/editor-main.blade.php
+<main class="flex-1 p-4 overflow-y-auto"
+      data-page-id="{{ $page->id }}"
+      data-page-content="{{ base64_encode($page->content) }}">
+    <div id="page-content" class="border p-4"
+         @dragover.prevent
+         @drop="handleDrop($event)"
+         x-html="pageContent"
+         @mouseover="highlightElement($event)"
+         @mouseout="removeHighlight($event)">
+        <!-- Здесь будет контент страницы -->
+        <template x-for="element in document.getElementById('page-content').querySelectorAll('[data-id]')" :key="element.dataset.id">
+            <div :data-id="element.dataset.id" :data-type="element.dataset.type"
+                 x-data="element.dataset.type === 'block' ? blockComponent : elementComponent"
+                 draggable="true"
+                 @dragstart="event.dataTransfer.setData('text/plain', 'element-' + element.dataset.id);"
+                 @dragover.prevent
+                 @drop.prevent>
+                <template x-if="element.dataset.type === 'block'">
+                   <div x-html="element.outerHTML"></div>
+                </template>
+                <template x-if="element.dataset.type === 'element'">
+                    <div x-html="element.outerHTML"></div>
+                </template>
+            </div>
+        </template>
+    </div>
+</main>
+
+// resources/views/partials/editor-modal.blade.php
+<div x-show="showModal" class="fixed z-50 inset-0 overflow-y-auto bg-gray-500 bg-opacity-75 flex items-center justify-center" style="display: none;">
+    <div class="bg-white rounded-lg p-8 w-3/4 max-w-3xl">
+        <h2 class="text-2xl font-bold mb-4">Редактирование HTML-кода</h2>
+         <textarea x-model="modalCode" class="w-full h-96 border rounded p-2 mb-4"></textarea>
+        <div class="flex justify-end">
+           <button @click="applyCode()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2">Применить</button>
+             <button @click="showModal = false" class="bg-gray-300 hover:bg-gray-400 text-gray-700 font-bold py-2 px-4 rounded">Отмена</button>
+        </div>
+    </div>
+</div>
+
+// resources/views/partials/editor-sidebar.blade.php
+<div x-data="{ showPanel:true, blocksOpen: true, elementsOpen: true, categoryOpen: {} }">
+    <div class="absolute top-4 left-4 z-10">
+        <button @click="showPanel = !showPanel"  x-show="!showPanel" class="bg-gray-500 hover:bg-gray-700 text-white font-bold p-2 rounded" >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m-3-4.5h.00m0 6.75h.00"/>
+            </svg>
+        </button>
+    </div>
+
+    <aside class="w-80 bg-gray-100 p-4 border-r flex flex-col"  x-show="showPanel">
+        <div class="mb-4">
+            <button @click="savePage" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Сохранить</button>
+            <button @click="previewPage" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Просмотр</button>
+            <button @click="exportPage" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">Экспорт</button>
+            <button @click="showPanel = false" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded" x-text="showPanel ? 'Скрыть' : 'Показать'"></button>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+            <div class="mb-6">
+                <h2 class="text-lg font-bold mb-2 flex items-center justify-between cursor-pointer" @click="blocksOpen = !blocksOpen">
+                    <span >Блоки</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4" :class="{'rotate-180': blocksOpen}">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                    </svg>
+                </h2>
+                <div x-show="blocksOpen" class="space-y-2">
+                    @foreach($categories as $category)
+                        @if($category->blocks->count() > 0)
+                            <div class="mb-2">
+                                <h3 class="text-md font-bold mb-2 flex items-center justify-between cursor-pointer" @click="categoryOpen['blocks_{{ $category->id }}'] = !categoryOpen['blocks_{{ $category->id }}']">
+                                    <span class="flex items-center">
+                                        {{ $category->title }}
+                                        <span class="ml-2 bg-gray-200 text-gray-700 text-xs font-semibold py-0.5 px-2 rounded-full">{{ $category->blocks->count() }}</span>
+                                    </span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4" :class="{'rotate-180': categoryOpen['blocks_{{ $category->id }}']}">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                                        </svg>
+                                </h3>
+                                <div class="flex flex-wrap gap-2" x-show="categoryOpen['blocks_{{ $category->id }}']" >
+                                    @foreach($category->blocks as $block)
+                                        <div class="p-2 border rounded cursor-pointer"
+                                             draggable="true"
+                                             @dragstart="isDragging = true; $event.dataTransfer.setData('text/plain', 'block-{{ $block->id }}')"
+                                        >
+                                            <img src="{{ $block->preview ? asset('storage/' . $block->preview) : 'https://placehold.co/50x50'}}" alt="{{ $block->title }}" class="w-16 h-16 object-cover mb-2">
+                                            {{ $block->title }}
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    @endforeach
+                </div>
+            </div>
+            <div class="border-t my-4"></div>
+            <div class="mb-6">
+                <h2 class="text-lg font-bold mb-2 flex items-center justify-between cursor-pointer" @click="elementsOpen = !elementsOpen">
+                    <span>Элементы</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4" :class="{'rotate-180': elementsOpen}">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                    </svg>
+                </h2>
+                <div x-show="elementsOpen" class="space-y-2">
+                    @foreach($categories as $category)
+                        @if($category->elements->count() > 0)
+                            <div class="mb-2">
+                                <h3 class="text-md font-bold mb-2 flex items-center justify-between cursor-pointer" @click="categoryOpen['elements_{{ $category->id }}'] = !categoryOpen['elements_{{ $category->id }}']">
+                                    <span class="flex items-center">
+                                        {{ $category->title }}
+                                        <span class="ml-2 bg-gray-200 text-gray-700 text-xs font-semibold py-0.5 px-2 rounded-full">{{ $category->elements->count() }}</span>
+                                    </span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4" :class="{'rotate-180': categoryOpen['elements_{{ $category->id }}']}">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                                        </svg>
+                                </h3>
+                                <div class="flex flex-wrap gap-2" x-show="categoryOpen['elements_{{ $category->id }}']">
+                                    @foreach($category->elements as $element)
+                                        <div class="p-2 border rounded cursor-pointer"
+                                             draggable="true"
+                                            @dragstart="isDragging = true; $event.dataTransfer.setData('text/plain', 'element-{{ $element->id }}')"
+                                        >
+                                            <img src="{{ $element->preview ? asset('storage/' . $element->preview) : 'https://placehold.co/50x50' }}" alt="{{ $element->title }}" class="w-16 h-16 object-cover mb-2">
+                                            {{ $element->title }}
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    @endforeach
+                </div>
+            </div>
+        </div>
+    </aside>
+</div>
+
+// resources/views/editor.blade.php
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Визуальный редактор</title>
+    @vite(['resources/css/app.css'])
+    <script src="https://cdn.tailwindcss.com"></script>
+    @vite('resources/js/app.js')
+</head>
+<body>
+<div class="flex h-screen"
+     x-data="editor()"
+     x-init="init()">
+    @include('partials.editor-sidebar')
+    @include('partials.editor-main')
+    
+    <!-- Блок с x-data="elementEditor()" -->
+    <div x-show="selectedElement"
+         class="bg-white p-4 border-l w-96 absolute top-0 right-0 h-full overflow-y-auto"
+         x-data="elementEditor()">
+        @include('partials.editor-element-panel')
+        
+        <!-- Перемещаем модальное окно сюда -->
+        @include('partials.editor-modal')
+    </div>
+</div>
+</body>
+</html>
+
+// resources/views/export.blade.php
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ $page->seo_title ?? $page->title }}</title>
+    @if($page->custom_css_classes)
+        <style>
+            {{ $page->custom_css_classes }}
+        </style>
+    @endif
+</head>
+<body>
+    {!! $page->content !!}
+    @if($page->custom_js_code)
+        <script>
+            {{ $page->custom_js_code }}
+        </script>
+    @endif
+</body>
+</html>
+
+// routes/web.php
+<?php
+
+use App\Models\PageBuild;
+use TCG\Voyager\Facades\Voyager;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\BlockController;
+use App\Http\Controllers\ImageController;
+use App\Http\Controllers\EditorController;
+use App\Http\Controllers\ElementController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PageBuildController;
+
+
+Route::get('/', function () {
+    return view('welcome');
+});
+
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+require __DIR__.'/auth.php';
+
+
+Route::group(['prefix' => 'admin'], function () {
+    Voyager::routes();
+    // Добавьте маршрут для загрузки изображений
+    Route::post('/upload-image', [ImageController::class, 'upload'])->name('admin.upload-image');
+
+});
+
+Route::get('/editor/{page}', [EditorController::class, 'show'])->name('editor.show');
+Route::put('/page-builds/{page}', [PageBuildController::class, 'update'])->name('page-builds.update');
+
+Route::get('/page-builds/{page}/export', [PageBuildController::class, 'export'])->name('page-builds.export');
+Route::get('/pages/{page}/preview', [PageBuildController::class, 'preview'])->name('page-builds.preview');
+Route::post('/upload-image', [ImageController::class, 'upload'])->name('upload-image');
+
+Route::get('/getblocks/{block}', [BlockController::class, 'show'])->name('getblocks.show');
+Route::get('/getelements/{element}', [ElementController::class, 'show'])->name('getelements.show');
+
+

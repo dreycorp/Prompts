@@ -1,0 +1,2196 @@
+/role Ты опытный разработчик на PHP. У тебя 15 летний опыт работы с фрейморком Laravel и Winter CMS.
+Твоя задача помочь неопытному пользователю создавать плагины для Winter cms.
+Ты умеешь писать код, проектировать, создавать компоненты и делать шаблоны с использованием bootstrap 4. Ты хорошо разбираешься в структуре Фреймворка Winter Cms. И умеешь использовать плагин Builder, который помогает создавать новые плагины и Бд для плагина.
+- Обязательно описывай, что нажимать при создании плагина и куда вставлять код, где создавать файлы и куда именно вносить изменения. 
+- учитывай, что программист которому ты помогаешь не очень опытный и только учится создавать плагины.
+- можешь предлагать улучшения по коду, функционалу и проектированию.
+- описывай все по шагам. Шаг 1, сделали, шаг 2, сделали. Чтобы программист мог копировать код и выполнять все поэтапно.
+
+----
+
+Привет. Я хочу создать новый плагин.
+Сейчас пишу его функционал, для начала предложи свои рекомендации и можешь задать вопросы, которые помогут улучшить плагин, а потом приступим к созданию.
+
+Описание плагина.
+- Плагин управления списком partial, которые должны отобразиться на странице. Partial будут выводиться в определённом порядке.
+- Должен быть компонент, который можно прикрепить к странице, у этого компонента можно выбрать одну из созданных заранее подборок partial. Он их выведет и таким образом сформирует страницу, на которой отобразятся все эти partial.
+- Второй компонент отвечает, за A/B тест. Там можно выбрать несколько подборок с partial, которые заранее создали в админке. И далее при каждом переходе на страницу, этот компонент будет равномерно распределять пользователей по подборкам. Для каждого пользователя надо сохранить куки, если уже сработал какой-то вариант теста, то запомнить его на 1 месяц.
+- При создании подборок в админке можно задать название для себя. Далее выбрать несколько partials из папки текущего шаблона. У этих партиалс можно менять порядок.
+
+---
+
+Отличная идея для плагина. Звучит очень полезно для гибкой настройки и тестирования страниц. Давай обсудим некоторые моменты и улучшения, а потом пошагово реализуем твой плагин.
+
+Рекомендации и вопросы:
+
+1. Хранение подборок:
+    *   Как ты планируешь хранить информацию о подборках? В базе данных?  
+        *   Рекомендую: Использовать БД, так как это обеспечит удобное управление, редактирование и выборку данных.
+2. Выбор partials:
+    *   Как пользователь будет выбирать partials для подборки?  
+        *   Рекомендую: Предоставить список доступных partials из папки шаблона в выпадающем списке, с возможностью множественного выбора и сортировки перетаскиванием.
+3. A/B тест - распределение:
+    *   Как будет определяться "равномерность" распределения?  
+        *   Рекомендую: Использовать псевдослучайное число и деление по модулю на количество вариантов. Это обеспечит достаточно равномерное распределение.
+    *   Будут ли учитываться новые пользователи, которые заходят впервые после изменения вариантов A/B теста?  
+        *   Рекомендую: Да, для них тоже нужно проводить распределение.
+4. A/B тест - куки:
+    *   Как будет называться кука?  
+        *   Рекомендую: Использовать префикс плагина и название теста, например: myplugin_abtest_{test_id}.
+    *   Будет ли возможность задавать время жизни куки из админки?  
+        *   Рекомендую: Да, это добавит гибкости в настройках. По умолчанию можно установить 30 дней.
+5. Кеширование:
+    *   Будет ли использоваться кеширование для ускорения загрузки?
+        *   Рекомендую: Да, кешировать сгенерированные страницы (после рендеринга partials) на некоторое время (например, на 5 минут). Это значительно ускорит работу сайта.
+
+Улучшения:
+
+1. Версионирование partials:
+    *   Можно добавить функционал версионирования partials, чтобы можно было отслеживать изменения и откатываться к предыдущим версиям. (Это можно сделать в будущих версиях плагина).
+2. Статистика A/B теста:
+    *   Можно собирать статистику по каждому варианту (например, количество показов, достижение целей). Это позволит анализировать эффективность A/B тестов. (Также для будущих версий).
+3. Интеграция с Google Analytics / Яндекс.Метрикой:
+    *   Можно добавить возможность интеграции с системами аналитики для более детального анализа результатов A/B тестов. (Также для будущих версий).
+
+Дополнительные вопросы:
+
+1. Название плагина: Как ты хочешь назвать свой плагин? Давай придумаем что-нибудь запоминающееся, например: "PageBuilder", "FlexiPage", "AB ??????????".
+2. Автор плагина: Кто будет указан как автор?
+
+Следующие шаги:
+
+После того как мы обсудим эти вопросы, я помогу тебе создать плагин по шагам, используя плагин Builder. Мы создадим:
+
+1. Модели и таблицы БД.
+2. Контроллеры для управления подборками и A/B тестами в админке.
+3. Компоненты для вывода partials на страницах.
+4. Вёрстку (шаблоны) с использованием Bootstrap 4.
+
+Жду твоих ответов, чтобы мы могли приступить к созданию плагина!
+
+---
+Ответы.
+1. Да, хранить в базе
+2. Да, список из доступных
+3. Да, псевдослучаной распределение, и деление по модулю на количество вариантов. 
+Да, надо учитывать новых пользователей. Т.е для них просто будут новые правила, а для старых, вариант который для них сохранился в куках.
+
+4. Да, пусть так называется.
+Время пусть будет прописано сразу, не надо редактировать.
+
+5. Да, можно кешировать
+
+Улучшения.
+1. Да, версионирование позже добавим
+2. Пока просто статистику по количеству показов подборки и теста
+3. Да , нужна интеграция с Яндекс метрикой
+
+Название плагина "PageBuilder". 
+Автор Dreycorp
+
+---
+
+Отлично! Теперь у нас есть вся необходимая информация. Приступим к созданию плагина "PageBuilder" от автора "Dreycorp".
+
+**Шаг 1: Создание плагина с помощью Builder.**
+
+1. Зайди в админку Winter CMS.
+2. Перейди в раздел "System" -> "Updates & Plugins" (Обновления и плагины).
+3. В левом меню выбери пункт "Builder".
+4. Нажми кнопку "New Plugin" (Новый плагин) в левом верхнем углу.
+5. В открывшемся окне заполни поля:
+    *   **Plugin name:** PageBuilder
+    *   **Author name:** Dreycorp
+    *   **Icon:** выбери иконку, которая тебе нравится (например, "oc-icon-cubes").
+    *   **Plugin homepage URL:** (пока можешь оставить пустым).
+    *   **Description:** (введи краткое описание плагина, например: "Плагин для управления partials и A/B тестирования.").
+6. Нажми кнопку "Create" (Создать).
+
+**Шаг 2: Создание модели для подборок (Partial Sets).**
+
+1. В левом меню Builder выбери плагин "PageBuilder" (Dreycorp.PageBuilder).
+2. Перейди на вкладку "Models" (Модели) и нажми кнопку "New Model" (Новая модель).
+3. Заполни поля:
+    *   **Model Class Name:** PartialSet
+    *   **Database Table:** dreycorp_pagebuilder_partial_sets
+4. Нажми кнопку "Create" (Создать).
+5. Открой созданную модель PartialSet.
+6. На вкладке "Fields" (Поля) добавь следующие поля:
+    *   **name:**
+        *   **Label:** Name
+        *   **Type:** text
+        *   **Comment:** Название подборки для удобства.
+    *   **partials:**
+        *   **Label:** Partials
+        *   **Type:** repeater
+        *   **Comment:** Список partials в подборке.
+            *   в настройках repeater добавь группу с единственным полем:
+                *   **partial:**
+                    *   **Label:** Partial
+                    *   **Type:** dropdown
+                    *   **Comment:** Выбор partial из списка.
+    *   **views:**
+        *   **Label:** Views
+        *   **Type:** number
+        *   **Comment:** Количество показов подборки.
+        *   **Default value:** 0
+7. Нажми кнопку "Save" (Сохранить).
+
+**Шаг 3: Создание модели для A/B тестов (AB Tests).**
+
+1. В левом меню Builder выбери плагин "PageBuilder" (Dreycorp.PageBuilder).
+2. Перейди на вкладку "Models" (Модели) и нажми кнопку "New Model" (Новая модель).
+3. Заполни поля:
+    *   **Model Class Name:** ABTest
+    *   **Database Table:** dreycorp_pagebuilder_ab_tests
+4. Нажми кнопку "Create" (Создать).
+5. Открой созданную модель ABTest.
+6. На вкладке "Fields" (Поля) добавь следующие поля:
+    *   **name:**
+        *   **Label:** Name
+        *   **Type:** text
+        *   **Comment:** Название A/B теста.
+    *   **partial_sets:**
+        *   **Label:** Partial Sets
+        *   **Type:** checkboxlist
+        *   **Comment:** Выбор подборок для A/B теста.
+    *   **views:**
+        *   **Label:** Views
+        *   **Type:** number
+        *   **Comment:** Количество показов теста.
+        *   **Default value:** 0
+7. Нажми кнопку "Save" (Сохранить).
+
+**Шаг 4: Создание связи между моделями.**
+
+1. Открой модель ABTest.
+2. Перейди на вкладку "Relations" (Связи).
+3. Нажми кнопку "Add Relation" (Добавить связь).
+4. В открывшемся окне настрой связь:
+    *   **Relation type:** Belongs To Many (Принадлежит ко многим).
+    *   **Related Model Class:** Dreycorp\PageBuilder\Models\PartialSet
+    *   **Model Column Name:** partial_sets
+5. Нажми кнопку "Create" (Создать).
+
+**Шаг 5: Создание миграции для таблиц БД.**
+
+1. В левом меню Builder выбери плагин "PageBuilder" (Dreycorp.PageBuilder).
+2. Перейди на вкладку "Database" (База данных).
+3. Нажми кнопку "Save & Apply Migration" (Сохранить и применить миграцию).
+
+**Шаг 6: Получение списка partials для dropdown.**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/models/PartialSet.php`.
+2. Добавь в него следующую функцию:
+
+```php
+<?php namespace Dreycorp\PageBuilder\Models;
+
+use Model;
+use File;
+use System\Classes\PluginManager;
+
+/**
+ * Model
+ */
+class PartialSet extends Model
+{
+    use \October\Rain\Database\Traits\Validation;
+    
+    use \October\Rain\Database\Traits\SoftDelete;
+
+    protected $dates = ['deleted_at'];
+
+    /**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_pagebuilder_partial_sets';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+    ];
+
+    public $hasMany = [
+        'abtests' => ['Dreycorp\PageBuilder\Models\ABTest', 'key' => 'partial_set_id']
+    ];
+
+    public function getPartialOptions()
+    {
+        $theme = \Cms\Classes\Theme::getActiveTheme();
+        $partials = File::files($theme->getPath() . '/partials');
+        $result = [];
+
+        foreach ($partials as $partial) {
+            $fileName = pathinfo($partial, PATHINFO_FILENAME);
+            $result[$fileName] = $fileName;
+        }
+
+        return $result;
+    }
+}
+```
+
+Эта функция будет возвращать список partials из папки активного шаблона.
+
+**Шаг 7. Настройка options для partials в модели.**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/models/partialset/fields.yaml`
+2. Замените код для поля `partial` на:
+
+```yaml
+partials:
+    label: Partials
+    type: repeater
+    comment: Список partials в подборке.
+    form:
+        fields:
+            partial:
+                label: Partial
+                type: dropdown
+                comment: Выбор partial из списка.
+                options: getPartialOptions
+```
+
+**Шаг 8: Создание связи в модели ABTest.**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/models/ABTest.php`
+2. Добавьте следующий код:
+
+```php
+<?php namespace Dreycorp\PageBuilder\Models;
+
+use Model;
+
+/**
+ * Model
+ */
+class ABTest extends Model
+{
+    use \October\Rain\Database\Traits\Validation;
+    
+    use \October\Rain\Database\Traits\SoftDelete;
+
+    protected $dates = ['deleted_at'];
+
+    /**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_pagebuilder_ab_tests';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+    ];
+
+    public $belongsToMany = [
+        'partial_sets' => [
+            'Dreycorp\PageBuilder\Models\PartialSet',
+            'table' => 'dreycorp_pagebuilder_abtest_partialset',
+            'key' => 'abtest_id',
+            'otherKey' => 'partialset_id'
+        ]
+    ];
+}
+```
+
+**Шаг 9. Создание таблицы для связи ABTest и PartialSet.**
+1. В Builder, на вкладке **Database** плагина **PageBuilder** добавьте новую миграцию с именем `create_abtest_partialset_table`.
+2. Вставьте следующий код в созданный файл миграции:
+
+```php
+<?php namespace Dreycorp\PageBuilder\Updates;
+
+use Schema;
+use October\Rain\Database\Updates\Migration;
+
+class CreateAbtestPartialsetTable extends Migration
+{
+    public function up()
+    {
+        Schema::create('dreycorp_pagebuilder_abtest_partialset', function($table)
+        {
+            $table->engine = 'InnoDB';
+            $table->integer('abtest_id')->unsigned();
+            $table->integer('partialset_id')->unsigned();
+            $table->primary(['abtest_id', 'partialset_id'], 'abtest_partialset_primary');
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('dreycorp_pagebuilder_abtest_partialset');
+    }
+}
+```
+3. Сохраните и запустите миграцию.
+
+**Шаг 10. Связываем partial set в модели ABTest.**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/models/abtest/fields.yaml`
+2. Замените код для поля `partial_sets` на:
+
+```yaml
+partial_sets:
+    label: Partial Sets
+    type: checkboxlist
+    comment: Выбор подборок для A/B теста.
+    options: listPartialSets
+```
+3. Откройте файл `plugins/dreycorp/pagebuilder/models/ABTest.php` и добавьте функцию `listPartialSets`:
+```php
+// ... предыдущий код ...
+
+public function listPartialSets()
+{
+    return PartialSet::lists('name', 'id');
+}
+
+// ... остальной код ...
+```
+
+На этом пока всё. Мы создали основу для плагина. В следующий раз мы создадим контроллеры и представления для управления подборками и A/B тестами в админке. Позже добавим компоненты.
+
+**Шаг 11: Создание контроллера для управления подборками (Partial Sets).**
+
+1. В левом меню Builder выбери плагин "PageBuilder" (Dreycorp.PageBuilder).
+2. Перейди на вкладку "Controllers" (Контроллеры) и нажми кнопку "New Controller" (Новый контроллер).
+3. Заполни поля:
+
+    *   **Controller Name:** PartialSets
+    *   **Use Model:** отметь чекбокс и выбери модель "PartialSet" (Dreycorp\PageBuilder\Models\PartialSet).
+    *   **Add Create Page:** отметь чекбокс.
+    *   **Add Update Page:** отметь чекбокс.
+    *   **Add List Page:** отметь чекбокс.
+4. Нажми кнопку "Create" (Создать).
+5. Открой созданный контроллер `plugins/dreycorp/pagebuilder/controllers/PartialSets.php`.
+6. В методе `__construct()` добавь права доступа для администраторов. Замените код `__construct()` на:
+
+```php
+public function __construct()
+{
+    parent::__construct();
+    BackendMenu::setContext('Dreycorp.PageBuilder', 'pagebuilder', 'partialsets');
+    $this->addCss('/plugins/dreycorp/pagebuilder/assets/css/backend.css');
+    $this->requiredPermissions = ['dreycorp.pagebuilder.manage_partials'];
+}
+```
+
+**Шаг 12: Создание контроллера для управления A/B тестами (AB Tests).**
+
+1. В левом меню Builder выбери плагин "PageBuilder" (Dreycorp.PageBuilder).
+2. Перейди на вкладку "Controllers" (Контроллеры) и нажми кнопку "New Controller" (Новый контроллер).
+3. Заполни поля:
+
+    *   **Controller Name:** ABTests
+    *   **Use Model:** отметь чекбокс и выбери модель "ABTest" (Dreycorp\PageBuilder\Models\ABTest).
+    *   **Add Create Page:** отметь чекбокс.
+    *   **Add Update Page:** отметь чекбокс.
+    *   **Add List Page:** отметь чекбокс.
+4. Нажми кнопку "Create" (Создать).
+5. Открой созданный контроллер `plugins/dreycorp/pagebuilder/controllers/ABTests.php`.
+6. В методе `__construct()` добавь права доступа для администраторов. Замените код `__construct()` на:
+
+```php
+public function __construct()
+{
+    parent::__construct();
+    BackendMenu::setContext('Dreycorp.PageBuilder', 'pagebuilder', 'abtests');
+    $this->requiredPermissions = ['dreycorp.pagebuilder.manage_abtests'];
+}
+```
+
+**Шаг 13: Добавление пунктов меню в админку.**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/Plugin.php`.
+2. Найди функцию `registerNavigation()` и замени ее на следующий код:
+
+```php
+public function registerNavigation()
+{
+    return [
+        'pagebuilder' => [
+            'label'       => 'PageBuilder',
+            'url'         => Backend::url('dreycorp/pagebuilder/partialsets'),
+            'icon'        => 'icon-cubes',
+            'permissions' => ['dreycorp.pagebuilder.*'],
+            'order'       => 500,
+
+            'sideMenu' => [
+                'partialsets' => [
+                    'label'       => 'Partial Sets',
+                    'url'         => Backend::url('dreycorp/pagebuilder/partialsets'),
+                    'icon'        => 'icon-th-list',
+                    'permissions' => ['dreycorp.pagebuilder.manage_partials'],
+                    'order'       => 501,
+                ],
+                'abtests' => [
+                    'label'       => 'A/B Tests',
+                    'url'         => Backend::url('dreycorp/pagebuilder/abtests'),
+                    'icon'        => 'icon-random',
+                    'permissions' => ['dreycorp.pagebuilder.manage_abtests'],
+                    'order'       => 502,
+                ],
+            ]
+        ]
+    ];
+}
+```
+
+**Шаг 14: Добавление прав доступа.**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/Plugin.php`.
+2. Найди функцию `registerPermissions()` и замени ее на следующий код:
+
+```php
+public function registerPermissions()
+{
+    return [
+        'dreycorp.pagebuilder.manage_partials' => [
+            'tab' => 'PageBuilder',
+            'label' => 'Manage Partials'
+        ],
+        'dreycorp.pagebuilder.manage_abtests' => [
+            'tab' => 'PageBuilder',
+            'label' => 'Manage A/B Tests'
+        ],
+    ];
+}
+```
+
+**Шаг 15: Создание CSS файла для стилизации.**
+
+1. Создайте файл `plugins/dreycorp/pagebuilder/assets/css/backend.css`.
+2. Вставьте в него следующий код:
+
+```css
+.recordfinder-popup .form-group:last-child, .recordfinder-popup .form-buttons {
+    display: none !important;
+}
+```
+
+Этот CSS код скроет лишние кнопки в модальном окне выбора подборок для A/B теста.
+
+**Шаг 16: Обновление версий плагина и запуск миграций.**
+
+1. В Builder, на вкладке **Versions** плагина **PageBuilder** добавьте новую версию с именем `1.0.1` и описанием `Added controllers and menu items`.
+2. Сохраните и запустите миграцию.
+
+Теперь у тебя в админке, в разделе "PageBuilder", должны появиться два пункта: "Partial Sets" и "A/B Tests". Ты можешь зайти в каждый из них и создавать, редактировать и удалять записи.
+
+На следующем этапе мы займемся созданием компонентов для вывода partials на страницах сайта и логикой A/B тестирования.
+
+**Шаг 17: Создание компонента для вывода подборки partials.**
+
+1. В левом меню Builder выбери плагин "PageBuilder" (Dreycorp.PageBuilder).
+2. Перейди на вкладку "Components" (Компоненты) и нажми кнопку "New Component" (Новый компонент).
+3. Заполни поля:
+
+    *   **Component Name:** PartialSetRenderer
+    *   **Component Description:** Выводит подборку partials.
+4. Нажми кнопку "Create" (Создать).
+5. Открой созданный компонент `plugins/dreycorp/pagebuilder/components/PartialSetRenderer.php`.
+6. Замените его содержимое на следующий код:
+
+```php
+<?php namespace Dreycorp\PageBuilder\Components;
+
+use Cms\Classes\ComponentBase;
+use Dreycorp\PageBuilder\Models\PartialSet;
+use Cms\Classes\Partial;
+
+class PartialSetRenderer extends ComponentBase
+{
+    public $partialSet;
+
+    public function componentDetails()
+    {
+        return [
+            'name'        => 'Partial Set Renderer',
+            'description' => 'Выводит подборку partials.'
+        ];
+    }
+
+    public function defineProperties()
+    {
+        return [
+            'partialSetId' => [
+                'title'       => 'Partial Set',
+                'description' => 'Выберите подборку partials для отображения.',
+                'type'        => 'dropdown',
+            ],
+        ];
+    }
+
+    public function getPartialSetIdOptions()
+    {
+        return PartialSet::all()->lists('name', 'id');
+    }
+
+    public function onRun()
+    {
+        $partialSet = PartialSet::find($this->property('partialSetId'));
+
+        if ($partialSet) {
+            $partialSet->increment('views');
+            $this->partialSet = $partialSet;
+        }
+    }
+
+    public function onRender()
+    {
+        if (!$this->partialSet) {
+            return;
+        }
+
+        $output = '';
+        foreach ($this->partialSet->partials as $partialData) {
+            $output .= $this->renderPartial($partialData['partial']);
+        }
+
+        return $output;
+    }
+
+    protected function renderPartial($partialName)
+    {
+        $partial = Partial::load($this->controller->getTheme(), $partialName);
+
+        if (!$partial) {
+            return "<p>Partial {$partialName} not found</p>";
+        }
+
+        return $this->controller->partialToHtml($partial);
+    }
+}
+```
+
+**Разбор кода:**
+
+*   **`componentDetails()`:** Описывает компонент (название и описание).
+*   **`defineProperties()`:** Определяет свойство компонента `partialSetId`, которое будет выбираться в настройках компонента на странице.
+*   **`getPartialSetIdOptions()`:** Возвращает список подборок для выпадающего списка в настройках компонента.
+*   **`onRun()`:** Выполняется при каждом запросе страницы. Загружает выбранную подборку и увеличивает счетчик просмотров.
+*   **`onRender()`:** Выполняется при рендеринге компонента. Рендерит partials из подборки и возвращает HTML код.
+*   **`renderPartial()`:** Рендерит отдельный partial по его имени.
+
+**Шаг 18: Создание компонента для A/B тестирования.**
+
+1. В левом меню Builder выбери плагин "PageBuilder" (Dreycorp.PageBuilder).
+2. Перейди на вкладку "Components" (Компоненты) и нажми кнопку "New Component" (Новый компонент).
+3. Заполни поля:
+
+    *   **Component Name:** ABTestRenderer
+    *   **Component Description:** Проводит A/B тестирование подборок partials.
+4. Нажми кнопку "Create" (Создать).
+5. Открой созданный компонент `plugins/dreycorp/pagebuilder/components/ABTestRenderer.php`.
+6. Замените его содержимое на следующий код:
+
+```php
+<?php namespace Dreycorp\PageBuilder\Components;
+
+use Cms\Classes\ComponentBase;
+use Dreycorp\PageBuilder\Models\ABTest;
+use Dreycorp\PageBuilder\Models\PartialSet;
+use Cookie;
+
+class ABTestRenderer extends ComponentBase
+{
+    public $partialSet;
+
+    public function componentDetails()
+    {
+        return [
+            'name'        => 'A/B Test Renderer',
+            'description' => 'Проводит A/B тестирование подборок partials.'
+        ];
+    }
+
+    public function defineProperties()
+    {
+        return [
+            'abTestId' => [
+                'title'       => 'A/B Test',
+                'description' => 'Выберите A/B тест для проведения.',
+                'type'        => 'dropdown',
+            ],
+        ];
+    }
+
+    public function getAbTestIdOptions()
+    {
+        return ABTest::all()->lists('name', 'id');
+    }
+
+    public function onRun()
+    {
+        $abTest = ABTest::find($this->property('abTestId'));
+
+        if (!$abTest) {
+            return;
+        }
+        $abTest->increment('views');
+
+        $cookieName = 'myplugin_abtest_' . $abTest->id;
+        $partialSetId = Cookie::get($cookieName);
+
+        if (!$partialSetId || !$abTest->partial_sets->contains($partialSetId)) {
+            $partialSetIds = $abTest->partial_sets->pluck('id')->toArray();
+            $randomIndex = rand(0, count($partialSetIds) - 1);
+            $partialSetId = $partialSetIds[$randomIndex];
+            Cookie::queue($cookieName, $partialSetId, 60 * 24 * 30); // 30 дней
+        }
+
+        $partialSet = PartialSet::find($partialSetId);
+        if ($partialSet) {
+            $partialSet->increment('views');
+            $this->partialSet = $partialSet;
+        }
+    }
+
+    public function onRender()
+    {
+        if (!$this->partialSet) {
+            return;
+        }
+
+        $output = '';
+        foreach ($this->partialSet->partials as $partialData) {
+            $output .= $this->renderPartial($partialData['partial']);
+        }
+
+        return $output;
+    }
+
+    protected function renderPartial($partialName)
+    {
+        $partial = \Cms\Classes\Partial::load($this->controller->getTheme(), $partialName);
+
+        if (!$partial) {
+            return "<p>Partial {$partialName} not found</p>";
+        }
+
+        return $this->controller->partialToHtml($partial);
+    }
+}
+```
+
+**Разбор кода:**
+
+*   **`componentDetails()`:** Описывает компонент.
+*   **`defineProperties()`:** Определяет свойство компонента `abTestId`.
+*   **`getAbTestIdOptions()`:** Возвращает список A/B тестов для выпадающего списка.
+*   **`onRun()`:**
+    *   Загружает A/B тест.
+    *   Увеличивает счетчик просмотров теста.
+    *   Пытается получить `partialSetId` из куки.
+    *   Если куки нет или `partialSetId` не принадлежит текущему тесту:
+        *   Выбирает случайный `partialSetId` из доступных в тесте.
+        *   Сохраняет `partialSetId` в куки на 30 дней.
+    *   Загружает подборку `PartialSet` по `partialSetId`.
+    *   Увеличивает счетчик просмотров подборки.
+    *   Сохраняет подборку в свойстве `partialSet`.
+*   **`onRender()`:** Рендерит partials из подборки (аналогично компоненту `PartialSetRenderer`).
+*   **`renderPartial()`:** Рендерит отдельный partial (аналогично компоненту `PartialSetRenderer`).
+
+**Шаг 19: Обновление версий плагина.**
+
+1. В Builder, на вкладке **Versions** плагина **PageBuilder** добавьте новую версию с именем `1.0.2` и описанием `Added components`.
+2. Сохраните изменения.
+
+**Использование компонентов:**
+
+Теперь ты можешь добавить созданные компоненты на любую страницу в админке Winter CMS.
+
+1. Перейди в раздел CMS -> Pages (Страницы).
+2. Открой нужную страницу.
+3. В левом меню выбери вкладку "Components" (Компоненты).
+4. Найди компонент "Partial Set Renderer" или "A/B Test Renderer" и перетащи его на страницу.
+5. В настройках компонента выбери нужную подборку или A/B тест.
+6. Сохрани страницу.
+
+Теперь на странице будут отображаться partials в соответствии с настройками компонента.
+
+**Дальнейшие улучшения:**
+
+*   **Кеширование:** Добавить кеширование для `onRender()` в обоих компонентах, чтобы не рендерить partials каждый раз.
+*   **Версионирование partials:** Реализовать функционал версионирования, как обсуждали ранее.
+*   **Статистика:** Добавить сбор и отображение статистики по A/B тестам (клики, конверсии и т.д.).
+*   **Интеграция с Яндекс.Метрикой:** Реализовать интеграцию с Яндекс.Метрикой для отслеживания целей.
+
+На данный момент мы реализовали основную часть функционала. В дальнейшем можно постепенно добавлять улучшения и расширять возможности плагина.
+
+Отлично, продолжаем!
+
+**Шаг 20: Кеширование.**
+
+Добавим кеширование в оба компонента, чтобы ускорить загрузку страниц.
+
+**Кеширование в PartialSetRenderer:**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/components/PartialSetRenderer.php`.
+2. Измени метод `onRender()` следующим образом:
+
+```php
+public function onRender()
+{
+    if (!$this->partialSet) {
+        return;
+    }
+
+    $cacheKey = 'pagebuilder_partialset_' . $this->partialSet->id;
+    $output = \Cache::remember($cacheKey, 5, function() { // Кешируем на 5 минут
+        $output = '';
+        foreach ($this->partialSet->partials as $partialData) {
+            $output .= $this->renderPartial($partialData['partial']);
+        }
+        return $output;
+    });
+
+    return $output;
+}
+```
+
+**Кеширование в ABTestRenderer:**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/components/ABTestRenderer.php`.
+2. Измени метод `onRender()` следующим образом:
+
+```php
+public function onRender()
+{
+    if (!$this->partialSet) {
+        return;
+    }
+
+    $cacheKey = 'pagebuilder_abtest_partialset_' . $this->partialSet->id;
+    $output = \Cache::remember($cacheKey, 5, function() { // Кешируем на 5 минут
+        $output = '';
+        foreach ($this->partialSet->partials as $partialData) {
+            $output .= $this->renderPartial($partialData['partial']);
+        }
+        return $output;
+    });
+
+    return $output;
+}
+```
+
+**Разбор изменений:**
+
+*   Мы обернули код рендеринга partials в функцию `\Cache::remember()`.
+*   `\Cache::remember($cacheKey, $minutes, $callback)`:
+    *   `$cacheKey`: Уникальный ключ для кеша. Мы используем `pagebuilder_partialset_` + `id` подборки для `PartialSetRenderer` и `pagebuilder_abtest_partialset_` + `id` подборки для `ABTestRenderer`.
+    *   `$minutes`: Время жизни кеша в минутах (у нас 5 минут).
+    *   `$callback`: Функция, которая возвращает данные для кеширования. В нашем случае, это функция, которая рендерит partials.
+
+Теперь, при первом рендеринге, результат будет сохранен в кеше на 5 минут. При последующих запросах, в течение этого времени, будет возвращаться закешированный результат.
+
+**Шаг 21: Интеграция с Яндекс.Метрикой.**
+
+Для интеграции с Яндекс.Метрикой нам потребуется:
+
+1. **Добавить поле для счетчика Метрики в настройки плагина.**
+2. **Добавить код счетчика на страницы сайта (в шаблон).**
+3. **Добавить отправку целей при просмотре определенной подборки в A/B тесте.**
+
+**Добавление поля для счетчика Метрики:**
+
+1. В Builder, в левом меню выбери плагин "PageBuilder".
+2. Перейди на вкладку "Settings" (Настройки).
+3. Нажми кнопку "Add Settings" (Добавить настройки).
+4. В модальном окне в поле "Model Class" выбери `Settings` (Dreycorp\PageBuilder\Models\Settings)
+5. Нажми "Create"
+6. Открой файл `plugins/dreycorp/pagebuilder/models/Settings.php`.
+7. Замени содержимое на:
+
+```php
+<?php namespace Dreycorp\PageBuilder\Models;
+
+use Model;
+
+class Settings extends Model
+{
+    public $implement = ['System.Behaviors.SettingsModel'];
+
+    // A unique code
+    public $settingsCode = 'dreycorp_pagebuilder_settings';
+
+    // Reference to field configuration
+    public $settingsFields = 'fields.yaml';
+}
+```
+
+1. Создай файл `plugins/dreycorp/pagebuilder/models/settings/fields.yaml` и добавь в него:
+
+```yaml
+fields:
+    yandex_metrika_counter_id:
+        label: Yandex.Metrika Counter ID
+        type: text
+        comment: Вставьте ID счетчика Яндекс.Метрики
+```
+
+1. В Builder, на вкладке "Versions" плагина "PageBuilder", добавь новую версию `1.0.3` с описанием `Added Yandex.Metrika integration`.
+2. Сохрани изменения.
+3. Перейди в раздел "Настройки" -> "PageBuilder" и введи ID своего счетчика Яндекс.Метрики.
+
+**Добавление кода счетчика на страницы сайта:**
+
+Это делается в шаблоне сайта. Тебе нужно добавить код счетчика Яндекс.Метрики, который ты получил при регистрации, в `<head>` или `<body>` шаблона.
+
+Пример кода (замени `XXXXXXXX` на свой ID счетчика):
+
+```html
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript" >
+   (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+   m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+   (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+
+   ym(XXXXXXXX, "init", {
+        clickmap:true,
+        trackLinks:true,
+        accurateTrackBounce:true,
+        webvisor:true
+   });
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/XXXXXXXX" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+```
+
+**Добавление отправки целей:**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/components/ABTestRenderer.php`.
+2. Добавь в `onRun()` после строки `$this->partialSet = $partialSet;` следующий код:
+
+```php
+// Отправка цели в Яндекс.Метрику
+$counterId = \Dreycorp\PageBuilder\Models\Settings::get('yandex_metrika_counter_id');
+if ($counterId) {
+    $goalName = 'abtest_' . $abTest->id . '_variant_' . $partialSet->id;
+    $this->page['yandexMetrikaGoal' . $abTest->id] = "ym({$counterId}, 'reachGoal', '{$goalName}');";
+}
+```
+
+1. В шаблоне, где подключается компонент `ABTestRenderer`, добавь в секцию `scripts` (или в `<head>`) следующий код:
+
+```html
+{% if attribute(this.page, 'yandexMetrikaGoal' ~ this.page.components.abtestrenderer.abTestId) %}
+    <script>
+        {{ attribute(this.page, 'yandexMetrikaGoal' ~ this.page.components.abtestrenderer.abTestId) }}
+    </script>
+{% endif %}
+```
+
+**Разбор изменений:**
+
+*   Мы добавили в `onRun()` компонента `ABTestRenderer` код, который формирует строку для отправки цели в Яндекс.Метрику.
+*   `$counterId`: Получает ID счетчика из настроек плагина.
+*   `$goalName`: Формирует имя цели в формате `abtest_{ID теста}_variant_{ID подборки}`.
+*   `$this->page['yandexMetrikaGoal' . $abTest->id]`: Добавляет JavaScript код для отправки цели в переменную страницы. У каждой цели будет уникальное имя переменной, привязанное к ID A/B теста. Это нужно для того чтобы переменные не конфликтовали, в случае если на странице будет несколько компонентов `ABTestRenderer`
+*   В шаблоне мы проверяем, существует ли переменная `yandexMetrikaGoal` для текущего A/B теста и, если существует, выводим JavaScript код для отправки цели.
+
+Теперь, при просмотре определенной подборки в A/B тесте, будет отправляться цель в Яндекс.Метрику. Имя цели будет содержать ID A/B теста и ID просмотренной подборки. Не забудьте создать цели в интерфейсе Яндекс.Метрики с такими же именами как `abtest_{ID теста}_variant_{ID подборки}`, где вместо `{ID теста}` и `{ID подборки}` будут подставляться соответствующие идентификаторы из БД.
+
+**Шаг 22: Статистика.**
+
+Простой вариант статистики - количество просмотров подборок и A/B тестов - у нас уже реализован. Давай добавим отображение этой статистики в админке.
+
+**Отображение статистики просмотров подборок:**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/controllers/partialsets/columns.yaml`.
+2. Добавь в него:
+
+```yaml
+columns:
+    name:
+        label: Name
+        type: text
+        searchable: true
+        sortable: true
+    views:
+        label: Views
+        type: number
+        searchable: true
+        sortable: true
+```
+
+**Отображение статистики просмотров A/B тестов:**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/controllers/abtests/columns.yaml`.
+2. Добавь в него:
+
+```yaml
+columns:
+    name:
+        label: Name
+        type: text
+        searchable: true
+        sortable: true
+    views:
+        label: Views
+        type: number
+        searchable: true
+        sortable: true
+```
+
+Теперь в списках подборок и A/B тестов в админке будет отображаться количество просмотров.
+
+**Дальнейшие улучшения:**
+
+*   **Более детальная статистика:** Можно добавить сбор и отображение статистики по кликам, конверсиям и другим действиям пользователей для каждого варианта A/B теста.
+*   **Графики:** Можно добавить графики для наглядного отображения статистики.
+*   **Экспорт статистики:** Можно добавить возможность экспорта статистики в CSV или Excel.
+
+На этом этапе мы добавили кеширование, интеграцию с Яндекс.Метрикой и базовую статистику.
+
+
+Отлично, мы проделали большую работу! Теперь у нас есть работающий плагин с основными функциями, кешированием, интеграцией с Яндекс.Метрикой и базовой статистикой.
+
+Давай сделаем еще пару улучшений для удобства.
+
+**Шаг 23: Улучшение интерфейса выбора partials**
+
+Сейчас у нас в админке, при создании подборки, partials выбираются из выпадающего списка, который показывает только имя partials. Давай добавим возможность предпросмотра partials в виде модального окна.
+
+1. Открой файл `plugins/dreycorp/pagebuilder/models/PartialSet.php`
+2. Добавь следующий метод:
+
+```php
+    public function getPartialPreviewOptions()
+    {
+        $theme = \Cms\Classes\Theme::getActiveTheme();
+        $partials = File::files($theme->getPath() . '/partials');
+        $result = [];
+
+        foreach ($partials as $partial) {
+            $fileName = pathinfo($partial, PATHINFO_FILENAME);
+            $result[$fileName] = [
+                'label' => $fileName,
+                'preview' => $this->getPartialPreview($fileName)
+            ];
+        }
+
+        return $result;
+    }
+
+    protected function getPartialPreview($partialName)
+    {
+        $partial = \Cms\Classes\Partial::load($this->controller->getTheme(), $partialName);
+
+        if (!$partial) {
+            return "<p>Partial {$partialName} not found</p>";
+        }
+        return \Cms\Classes\Controller::getController()->partialToHtml($partial);
+    }
+```
+3. Открой файл `plugins/dreycorp/pagebuilder/models/partialset/fields.yaml`.
+4. Измени тип поля `partial` в блоке `partials` на `recordfinder`.
+5. Замени поле `options: getPartialOptions` на `options: getPartialPreviewOptions`
+6.  Добавь в поле `partial` свойство `listTitle` со значением `Preview`:
+
+```yaml
+partials:
+    label: Partials
+    type: repeater
+    comment: Список partials в подборке.
+    form:
+        fields:
+            partial:
+                label: Partial
+                type: recordfinder
+                comment: Выбор partial из списка.
+                listTitle: Preview
+                options: getPartialPreviewOptions
+```
+7. В Builder, на вкладке "Versions" плагина "PageBuilder", добавь новую версию `1.0.4` с описанием `Added partial preview`
+8. Сохрани изменения.
+
+Теперь при выборе partials в админке, будет открываться модальное окно, в котором будет отображаться предпросмотр partials. Это позволит тебе быстрее и удобнее выбирать нужные partials.
+
+**Шаг 24: Добавление стилей для модального окна.**
+
+1. Открой файл `plugins/dreycorp/pagebuilder/assets/css/backend.css`
+2. Добавь в конец файла:
+
+```css
+.recordfinder-popup .modal-dialog {
+    max-width: 80%;
+}
+.recordfinder-popup .modal-body {
+    overflow: auto;
+    max-height: 80vh;
+}
+```
+Это добавит возможность просматривать partials с большой высотой.
+
+**Шаг 25: Валидация при создании A/B теста**
+
+1. Откройте файл `plugins/dreycorp/pagebuilder/models/ABTest.php` и добавьте следующий код в массив `$rules`:
+
+```php
+    public $rules = [
+        'name' => 'required',
+        'partial_sets' => 'required|array|min:2'
+    ];
+    
+    public $customMessages = [
+      'partial_sets.required' => 'Please select at least 2 partial sets.',
+      'partial_sets.min' => 'Please select at least 2 partial sets.'
+    ];
+```
+
+Этот код добавит валидацию, которая не позволит создать A/B тест без имени и с количеством подборок меньше двух.
+
+**Шаг 26: Обновление версий плагина.**
+
+1. В Builder, на вкладке **Versions** плагина **PageBuilder** добавьте новую версию с именем `1.0.5` и описанием `Added fixes and improvements`.
+2. Сохраните изменения.
+
+**Что мы сделали на этом этапе:**
+
+*   **Предпросмотр partials:** Теперь в админке, при выборе partials, можно просмотреть их содержимое в модальном окне.
+*   **Стили для модального окна:** Добавили стили для модального окна предпросмотра, чтобы оно не выходило за пределы экрана.
+*   **Валидация A/B теста:** Добавили валидацию для A/B тестов, чтобы нельзя было создать тест без имени и с количеством вариантов меньше двух.
+
+**Следующие шаги (опционально):**
+
+*   **Версионирование partials:** Реализация функционала версионирования.
+*   **Более детальная статистика:** Добавление сбора статистики по кликам, конверсиям, а также возможность экспорта.
+*   **Интеграция с Google Analytics:** Реализация интеграции с Google Analytics.
+*   **Тестирование:** Провести тщательное тестирование всех функций плагина.
+
+Теперь твой плагин "PageBuilder" готов к использованию и обладает необходимыми функциями для управления partials и A/B тестированием. Поздравляю!
+
+///
+Уже реализовано все. Вот код всего плагина.
+
+// plugins/dreycorp/pagebuilder/assets/css/backend.css
+.recordfinder-popup .form-group:last-child, .recordfinder-popup .form-buttons {
+    display: none !important;
+}
+
+.recordfinder-popup .modal-dialog {
+    max-width: 80%;
+}
+.recordfinder-popup .modal-body {
+    overflow: auto;
+    max-height: 80vh;
+}
+
+// plugins/dreycorp/pagebuilder/assets/js/partiallist.js
+$(document).on('click', '.recordfinder-popup [data-preview]', function () {
+    let modalBody = $(this).closest('.recordfinder-popup .modal-body');
+    let content = $(this).data('preview');
+    modalBody.html(content);
+});
+
+// plugins/dreycorp/pagebuilder/components/ABTestRenderer.php
+<?php namespace Dreycorp\PageBuilder\Components;
+
+use Cms\Classes\ComponentBase;
+use Dreycorp\PageBuilder\Models\ABTest;
+use Dreycorp\PageBuilder\Models\PartialSet;
+use Cookie;
+
+class ABTestRenderer extends ComponentBase
+{
+    public $partialSet;
+
+    public function componentDetails()
+    {
+        return [
+            'name'        => 'A/B Test Renderer',
+            'description' => 'Проводит A/B тестирование подборок partials.'
+        ];
+    }
+
+    public function defineProperties()
+    {
+        return [
+            'abTestId' => [
+                'title'       => 'A/B Test',
+                'description' => 'Выберите A/B тест для проведения.',
+                'type'        => 'dropdown',
+            ],
+        ];
+    }
+
+    public function getAbTestIdOptions()
+    {
+        return ABTest::all()->lists('name', 'id');
+    }
+
+    public function onRun()
+    {
+        $abTest = ABTest::find($this->property('abTestId'));
+
+        if (!$abTest) {
+            return;
+        }
+        $abTest->increment('views');
+
+        $partialSetId = \Input::get('debug');
+
+        if (!$partialSetId || !$abTest->partial_sets->contains($partialSetId)){
+            $cookieName = 'myplugin_abtest_' . $abTest->id;
+            $partialSetId = Cookie::get($cookieName);
+    
+            if (!$partialSetId || !$abTest->partial_sets->contains($partialSetId)) {
+                $partialSetIds = $abTest->partial_sets->pluck('id')->toArray();
+                $randomIndex = rand(0, count($partialSetIds) - 1);
+                $partialSetId = $partialSetIds[$randomIndex];
+                Cookie::queue($cookieName, $partialSetId, 60 * 24 * 30); // 30 дней
+            }
+        }
+
+
+        $partialSet = PartialSet::find($partialSetId);
+        if ($partialSet) {
+            $partialSet->increment('views');
+            $this->partialSet = $partialSet;
+        }
+
+        // Отправка цели в Яндекс.Метрику
+        $counterId = \Dreycorp\PageBuilder\Models\Settings::get('yandex_metrika_counter_id');
+        
+        if ($counterId) {
+            $goalName = 'abtest_' . $abTest->id . '_variant_' . $partialSet->id;
+            $this->page['yandexMetrikaGoal'] = "
+            window.dataLayer = window.dataLayer || [];
+            dataLayer.push({
+            'event': 'reachGoal',
+                'goal': '{$goalName}'
+            });
+            ";
+         }
+
+    }
+
+    public function onRender()
+    {
+        if (!$this->partialSet) {
+            return;
+        }
+    
+        $cacheKey = 'pagebuilder_abtest_partialset_' . $this->partialSet->id;
+        $output = \Cache::remember($cacheKey, 15*60*24, function() { // Кешируем на 15 дней
+            $output = '';
+            foreach ($this->partialSet->partials as $partialData) {
+                $output .= $this->renderPartial($partialData['partial']);
+            }
+            return $output;
+        });
+    
+        return $output;
+    }
+
+
+/*
+    public function renderPartial()
+    {
+        $partialName = $this->property('partial');
+        
+        if (!$partialName) {
+            return "<p>Partial not specified</p>";
+        }
+
+        $partial = \Cms\Classes\Partial::load($this->controller->getTheme(), $partialName);
+
+        if (!$partial) {
+            return "<p>Partial {$partialName} not found</p>";
+        }
+
+        return $this->controller->partialToHtml($partial);
+    }
+*/
+
+
+}
+
+// plugins/dreycorp/pagebuilder/components/PartialSetRenderer.php
+<?php namespace Dreycorp\PageBuilder\Components;
+
+use Cms\Classes\ComponentBase;
+use Dreycorp\PageBuilder\Models\PartialSet;
+use Cms\Classes\Partial;
+
+class PartialSetRenderer extends ComponentBase
+{
+    public $partialSet;
+
+    public function componentDetails()
+    {
+        return [
+            'name'        => 'Partial Set Renderer',
+            'description' => 'Выводит подборку partials.'
+        ];
+    }
+
+    public function defineProperties()
+    {
+        return [
+            'partialSetId' => [
+                'title'       => 'Partial Set',
+                'description' => 'Выберите подборку partials для отображения.',
+                'type'        => 'dropdown',
+            ],
+        ];
+    }
+
+    public function getPartialSetIdOptions()
+    {
+        return PartialSet::all()->lists('name', 'id');
+    }
+
+    public function onRun()
+    {
+        $partialSet = PartialSet::find($this->property('partialSetId'));
+        if ($partialSet) {
+            $partialSet->increment('views');
+            $this->partialSet = $partialSet;
+        }
+    }
+
+    public function onRender()
+    {
+        if (!$this->partialSet) {
+            return;
+        }
+    
+        $cacheKey = 'pagebuilder_partialset_' . $this->partialSet->id;
+        $output = \Cache::remember($cacheKey, 15*60*24, function() { // Кешируем на 15 дней
+            $output = '';
+            foreach ($this->partialSet->partials as $partialData) {
+                $output .= $this->renderPartial($partialData['partial']);
+            }
+            return $output;
+        });
+    
+        return $output;
+    }
+
+/*
+    public function renderPartial1($partialName)
+    {
+
+        
+        if (!$partialName) {
+            return "<p>Partial not specified</p>";
+        }
+
+        $partial = \Cms\Classes\Partial::load($this->controller->getTheme(), $partialName);
+
+        if (!$partial) {
+            return "<p>Partial {$partialName} not found</p>";
+        }
+
+        return $this->controller->partialToHtml($partial);
+    }
+*/
+
+
+
+}
+
+// plugins/dreycorp/pagebuilder/controllers/abtests/config_form.yaml
+name: ABTests
+form: $/dreycorp/pagebuilder/models/abtest/fields.yaml
+modelClass: Dreycorp\Pagebuilder\Models\ABTest
+defaultRedirect: dreycorp/pagebuilder/abtests
+create:
+    redirect: 'dreycorp/pagebuilder/abtests/update/:id'
+    redirectClose: dreycorp/pagebuilder/abtests
+update:
+    redirect: dreycorp/pagebuilder/abtests
+    redirectClose: dreycorp/pagebuilder/abtests
+
+// plugins/dreycorp/pagebuilder/controllers/abtests/config_list.yaml
+list: $/dreycorp/pagebuilder/models/abtest/columns.yaml
+modelClass: Dreycorp\Pagebuilder\Models\ABTest
+title: ABTests
+noRecordsMessage: 'backend::lang.list.no_records'
+showSetup: true
+showCheckboxes: true
+recordsPerPage: 20
+toolbar:
+    buttons: list_toolbar
+    search:
+        prompt: 'backend::lang.list.search_prompt'
+recordUrl: 'dreycorp/pagebuilder/abtests/update/:id'
+
+// plugins/dreycorp/pagebuilder/controllers/abtests/create.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/pagebuilder/abtests') ?>">ABTests</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.create')) ?>
+                </button>
+                <button 
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.create_and_close')) ?>
+                </button>
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/pagebuilder/abtests') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/pagebuilder/abtests') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/pagebuilder/controllers/abtests/index.htm
+<?= $this->listRender() ?>
+
+// plugins/dreycorp/pagebuilder/controllers/abtests/preview.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/pagebuilder/abtests') ?>">ABTests</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <div class="form-preview">
+        <?= $this->formRenderPreview() ?>
+    </div>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e($this->fatalError) ?></p>
+<?php endif ?>
+
+<p>
+    <a href="<?= Backend::url('dreycorp/pagebuilder/abtests') ?>" class="btn btn-default oc-icon-chevron-left">
+        <?= e(trans('backend::lang.form.return_to_list')) ?>
+    </a>
+</p>
+
+// plugins/dreycorp/pagebuilder/controllers/abtests/update.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/pagebuilder/abtests') ?>">ABTests</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-request-data="redirect:0"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.save')) ?>
+                </button>
+                <button
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.save_and_close')) ?>
+                </button>
+                <button
+                    type="button"
+                    class="oc-icon-trash-o btn-icon danger pull-right"
+                    data-request="onDelete"
+                    data-load-indicator="<?= e(trans('backend::lang.form.deleting')) ?>"
+                    data-request-confirm="<?= e(trans('backend::lang.form.confirm_delete')) ?>">
+                </button>
+
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/pagebuilder/abtests') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/pagebuilder/abtests') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/pagebuilder/controllers/abtests/_list_toolbar.htm
+<div data-control="toolbar">
+        <a href="<?= Backend::url('dreycorp/pagebuilder/abtests/create') ?>" class="btn btn-primary oc-icon-plus"><?= e(trans('backend::lang.form.create')) ?></a>
+            <button
+        class="btn btn-default oc-icon-trash-o"
+        disabled="disabled"
+        onclick="$(this).data('request-data', {
+            checked: $('.control-list').listWidget('getChecked')
+        })"
+        data-request="onDelete"
+        data-request-confirm="<?= e(trans('backend::lang.list.delete_selected_confirm')) ?>"
+        data-trigger-action="enable"
+        data-trigger=".control-list input[type=checkbox]"
+        data-trigger-condition="checked"
+        data-request-success="$(this).prop('disabled', true)"
+        data-stripe-load-indicator>
+        <?= e(trans('backend::lang.list.delete_selected')) ?>
+    </button>
+</div>
+
+// plugins/dreycorp/pagebuilder/controllers/ABTests.php
+<?php namespace Dreycorp\Pagebuilder\Controllers;
+
+use Backend\Classes\Controller;
+use BackendMenu;
+
+class ABTests extends Controller
+{
+    public $implement = [        'Backend\Behaviors\ListController',        'Backend\Behaviors\FormController'    ];
+    
+    public $listConfig = 'config_list.yaml';
+    public $formConfig = 'config_form.yaml';
+
+    public function __construct()
+    {
+        parent::__construct();
+        BackendMenu::setContext('Dreycorp.PageBuilder', 'pagebuilder', 'abtests');
+    }
+}
+
+// plugins/dreycorp/pagebuilder/controllers/partialsets/config_form.yaml
+name: PartialSets
+form: $/dreycorp/pagebuilder/models/partialset/fields.yaml
+modelClass: Dreycorp\Pagebuilder\Models\PartialSet
+defaultRedirect: dreycorp/pagebuilder/partialsets
+create:
+    redirect: 'dreycorp/pagebuilder/partialsets/update/:id'
+    redirectClose: dreycorp/pagebuilder/partialsets
+update:
+    redirect: dreycorp/pagebuilder/partialsets
+    redirectClose: dreycorp/pagebuilder/partialsets
+
+// plugins/dreycorp/pagebuilder/controllers/partialsets/config_list.yaml
+list: $/dreycorp/pagebuilder/models/partialset/columns.yaml
+modelClass: Dreycorp\Pagebuilder\Models\PartialSet
+title: PartialSets
+noRecordsMessage: 'backend::lang.list.no_records'
+showSetup: true
+showCheckboxes: true
+recordsPerPage: 20
+toolbar:
+    buttons: list_toolbar
+    search:
+        prompt: 'backend::lang.list.search_prompt'
+recordUrl: 'dreycorp/pagebuilder/partialsets/update/:id'
+
+// plugins/dreycorp/pagebuilder/controllers/partialsets/create.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/pagebuilder/partialsets') ?>">PartialSets</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.create')) ?>
+                </button>
+                <button 
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.create_and_close')) ?>
+                </button>
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/pagebuilder/partialsets') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/pagebuilder/partialsets') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/pagebuilder/controllers/partialsets/index.htm
+<?= $this->listRender() ?>
+
+// plugins/dreycorp/pagebuilder/controllers/partialsets/preview.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/pagebuilder/partialsets') ?>">PartialSets</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <div class="form-preview">
+        <?= $this->formRenderPreview() ?>
+    </div>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e($this->fatalError) ?></p>
+<?php endif ?>
+
+<p>
+    <a href="<?= Backend::url('dreycorp/pagebuilder/partialsets') ?>" class="btn btn-default oc-icon-chevron-left">
+        <?= e(trans('backend::lang.form.return_to_list')) ?>
+    </a>
+</p>
+
+// plugins/dreycorp/pagebuilder/controllers/partialsets/update.htm
+<?php Block::put('breadcrumb') ?>
+    <ul>
+        <li><a href="<?= Backend::url('dreycorp/pagebuilder/partialsets') ?>">PartialSets</a></li>
+        <li><?= e($this->pageTitle) ?></li>
+    </ul>
+<?php Block::endPut() ?>
+
+<?php if (!$this->fatalError): ?>
+
+    <?= Form::open(['class' => 'layout']) ?>
+
+        <div class="layout-row">
+            <?= $this->formRender() ?>
+        </div>
+
+        <div class="form-buttons">
+            <div class="loading-indicator-container">
+                <button
+                    type="submit"
+                    data-request="onSave"
+                    data-request-data="redirect:0"
+                    data-hotkey="ctrl+s, cmd+s"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-primary">
+                    <?= e(trans('backend::lang.form.save')) ?>
+                </button>
+                <button
+                    type="button"
+                    data-request="onSave"
+                    data-request-data="close:1"
+                    data-hotkey="ctrl+enter, cmd+enter"
+                    data-load-indicator="<?= e(trans('backend::lang.form.saving')) ?>"
+                    class="btn btn-default">
+                    <?= e(trans('backend::lang.form.save_and_close')) ?>
+                </button>
+                <button
+                    type="button"
+                    class="oc-icon-trash-o btn-icon danger pull-right"
+                    data-request="onDelete"
+                    data-load-indicator="<?= e(trans('backend::lang.form.deleting')) ?>"
+                    data-request-confirm="<?= e(trans('backend::lang.form.confirm_delete')) ?>">
+                </button>
+
+                <span class="btn-text">
+                    <?= e(trans('backend::lang.form.or')) ?> <a href="<?= Backend::url('dreycorp/pagebuilder/partialsets') ?>"><?= e(trans('backend::lang.form.cancel')) ?></a>
+                </span>
+            </div>
+        </div>
+    <?= Form::close() ?>
+
+<?php else: ?>
+    <p class="flash-message static error"><?= e(trans($this->fatalError)) ?></p>
+    <p><a href="<?= Backend::url('dreycorp/pagebuilder/partialsets') ?>" class="btn btn-default"><?= e(trans('backend::lang.form.return_to_list')) ?></a></p>
+<?php endif ?>
+
+// plugins/dreycorp/pagebuilder/controllers/partialsets/_list_toolbar.htm
+<div data-control="toolbar">
+        <a href="<?= Backend::url('dreycorp/pagebuilder/partialsets/create') ?>" class="btn btn-primary oc-icon-plus"><?= e(trans('backend::lang.form.create')) ?></a>
+        <button
+    class="btn btn-default oc-icon-copy"
+    disabled="disabled"
+    onclick="$(this).data('request-data', {
+        checked: $('.control-list').listWidget('getChecked')
+    })"
+    data-request="onDuplicate"
+    data-request-confirm="<?= e('Copy selected partial sets?') ?>"
+    data-trigger-action="enable"
+    data-trigger=".control-list input[type=checkbox]"
+    data-trigger-condition="checked"
+    data-request-success="$(this).prop('disabled', true)"
+    data-stripe-load-indicator>
+    <?= e('Копировать') ?>
+</button>    
+        
+        <button
+        class="btn btn-default oc-icon-trash-o"
+        disabled="disabled"
+        onclick="$(this).data('request-data', {
+            checked: $('.control-list').listWidget('getChecked')
+        })"
+        data-request="onDelete"
+        data-request-confirm="<?= e(trans('backend::lang.list.delete_selected_confirm')) ?>"
+        data-trigger-action="enable"
+        data-trigger=".control-list input[type=checkbox]"
+        data-trigger-condition="checked"
+        data-request-success="$(this).prop('disabled', true)"
+        data-stripe-load-indicator>
+        <?= e(trans('backend::lang.list.delete_selected')) ?>
+    </button>
+</div>
+
+// plugins/dreycorp/pagebuilder/controllers/PartialSets.php
+<?php namespace Dreycorp\Pagebuilder\Controllers;
+
+use Backend\Classes\Controller;
+use BackendMenu;
+
+class PartialSets extends Controller
+{
+    public $implement = [        'Backend\Behaviors\ListController',        'Backend\Behaviors\FormController'    ];
+    
+    public $listConfig = 'config_list.yaml';
+    public $formConfig = 'config_form.yaml';
+
+    public function __construct()
+    {
+        parent::__construct();
+        BackendMenu::setContext('Dreycorp.PageBuilder', 'pagebuilder', 'partialsets');
+        $this->addCss('/plugins/dreycorp/pagebuilder/assets/css/backend.css');
+    }
+
+    public function onDuplicate()
+    {
+        $checkedIds = post('checked');
+
+        if (!$checkedIds || !is_array($checkedIds)) {
+            \Flash::error('Please select partial set to copy');
+            return;
+        }
+        
+        foreach ($checkedIds as $id){
+            $partialSet = \Dreycorp\PageBuilder\Models\PartialSet::find($id);
+            
+            if ($partialSet) {
+                $newPartialSet = $partialSet->replicate();
+                $newPartialSet->name = $partialSet->name . ' Copy';
+                $newPartialSet->views = 0;
+                $newPartialSet->save();
+
+            }
+        }
+        \Flash::success('Partial set has been copied');
+        return $this->listRefresh();
+    }
+
+}
+
+// plugins/dreycorp/pagebuilder/lang/ru/lang.php
+<?php return [
+    'plugin' => [
+        'name' => 'PageBuilder',
+        'description' => 'Плагин для управления partials и A/B тестирования'
+    ]
+];
+
+// plugins/dreycorp/pagebuilder/models/abtest/columns.yaml
+columns:
+    id:
+        label: ID
+        type: number
+        searchable: true
+        sortable: true
+    name:
+        label: Name
+        type: text
+        searchable: true
+        sortable: true
+    views:
+        label: Views
+        type: number
+        searchable: true
+        sortable: true
+    created_at:
+        label: Created At
+        type: datetime
+        invisible: true
+    updated_at:
+        label: Updated At
+        type: datetime
+        invisible: true
+
+// plugins/dreycorp/pagebuilder/models/abtest/fields.yaml
+fields:
+    name:
+        label: Name
+        type: text
+        comment: Название A/B теста.
+    partial_sets:
+        label: Partial Sets
+        type: checkboxlist
+        comment: Выбор подборок для A/B теста.
+        options: listPartialSets
+    views:
+        label: Views
+        type: number
+        comment: Количество показов теста.
+        default: 0
+        readOnly: true
+
+// plugins/dreycorp/pagebuilder/models/ABTest.php
+<?php namespace Dreycorp\Pagebuilder\Models;
+
+use Model;
+use Dreycorp\Pagebuilder\Models\PartialSet;
+
+/**
+ * Model
+ */
+class ABTest extends Model
+{
+    use \Winter\Storm\Database\Traits\Validation;
+    
+    use \Winter\Storm\Database\Traits\SoftDelete;
+
+    protected $dates = ['deleted_at'];
+
+
+    /**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_pagebuilder_ab_tests';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+        'name' => 'required',
+        'partial_sets' => 'required|array|min:2'
+    ];
+    
+    public $customMessages = [
+      'partial_sets.required' => 'Please select at least 2 partial sets.',
+      'partial_sets.min' => 'Please select at least 2 partial sets.'
+    ];
+
+    public $belongsToMany = [
+        'partial_sets' => [
+            'Dreycorp\PageBuilder\Models\PartialSet',
+            'table' => 'dreycorp_pagebuilder_abtest_partialset',
+            'key' => 'abtest_id',
+            'otherKey' => 'partialset_id'
+        ]
+    ];
+
+    public function listPartialSets()
+    {
+        return PartialSet::lists('name', 'id');
+    }
+
+}
+
+// plugins/dreycorp/pagebuilder/models/partialset/columns.yaml
+columns:
+    id:
+        label: ID
+        type: number
+        searchable: true
+        sortable: true
+    name:
+        label: Name
+        type: text
+        searchable: true
+        sortable: true
+    views:
+        label: Views
+        type: number
+        searchable: true
+        sortable: true
+    created_at:
+        label: Created At
+        type: datetime
+        invisible: true
+    updated_at:
+        label: Updated At
+        type: datetime
+        invisible: true
+
+// plugins/dreycorp/pagebuilder/models/partialset/fields.yaml
+fields:
+    name:
+        label: Name
+        type: text
+        comment: Название подборки для удобства.
+    partials:
+        label: Partials
+        type: repeater
+        comment: Список partials в подборке.
+        form:
+            fields:
+                partial:
+                    label: Partial
+                    type: dropdown
+                    comment: Выбор partial из списка.
+                    options: getPartialOptions
+                    previewOptions: getPartialPreviewOptions
+    views:
+        label: Views
+        type: number
+        comment: Количество показов подборки.
+        default: 0
+        readOnly: true
+
+// plugins/dreycorp/pagebuilder/models/PartialSet.php
+<?php namespace Dreycorp\Pagebuilder\Models;
+
+use Model;
+use File;
+use System\Classes\PluginManager;
+/**
+ * Model
+ */
+class PartialSet extends Model
+{
+    use \Winter\Storm\Database\Traits\Validation;
+    
+    use \Winter\Storm\Database\Traits\SoftDelete;
+
+    protected $dates = ['deleted_at'];
+    protected $casts = [
+        'partials' => 'array',
+    ];
+
+/**
+     * @var string The database table used by the model.
+     */
+    public $table = 'dreycorp_pagebuilder_partial_sets';
+
+    /**
+     * @var array Validation rules
+     */
+    public $rules = [
+    ];
+
+    protected $fillable = ['name', 'partials', 'views'];
+
+    protected $jsonable = ['partials'];
+
+    public $hasMany = [
+        'abtests' => ['Dreycorp\PageBuilder\Models\ABTest', 'key' => 'partial_set_id']
+    ];
+
+
+    public function getPartialOptions()
+    {
+        $theme = \Cms\Classes\Theme::getActiveTheme();
+        $partials = $this->getPartialsFromDir($theme->getPath() . '/partials');
+        $result = [];
+
+        foreach ($partials as $partial) {
+           $result[$partial] = $partial;
+        }
+        return $result;
+    }
+
+    protected function getPartialsFromDir($dir)
+    {
+        $partials = [];
+        $items = File::allFiles($dir);
+        foreach ($items as $item) {
+            $path = str_replace('\\', '/', $item->getPathName());
+            $path = str_replace(str_replace('\\', '/', \Cms\Classes\Theme::getActiveTheme()->getPath()).'/partials/', '', $path);
+            $fileName = pathinfo($path, PATHINFO_FILENAME);
+            $ext = pathinfo($path, PATHINFO_EXTENSION);
+            if ($ext === 'htm'){
+                  $partials[] = $path;
+            }
+        }
+       return $partials;
+    }
+
+    public function getPartialPreviewOptions()
+    {
+        $theme = \Cms\Classes\Theme::getActiveTheme();
+        $partials = $this->getPartialsFromDir($theme->getPath() . '/partials');
+        $result = [];
+
+        foreach ($partials as $partial) {
+             $result[$partial] = [
+                'label' => $partial,
+                'preview' => $this->getPartialPreview($partial, $theme)
+            ];
+        }
+
+        return $result;
+    }
+     protected function getPartialPreview($partialName, $theme)
+    {
+         $partial = \Cms\Classes\Partial::load($theme, $partialName);
+
+        if (!$partial) {
+            return "<p>Partial {$partialName} not found</p>";
+        }
+        return \Backend::getController()->partialToHtml($partial);
+    }
+    
+/*
+     public function getPartialsAttribute($value)
+     {
+         return json_decode($value, true) ?? [];
+     }
+ 
+     public function setPartialsAttribute($value)
+     {
+         if (is_array($value)) {
+             $this->attributes['partials'] = json_encode(array_values($value));
+         } else {
+             $this->attributes['partials'] = $value;
+         }
+     }
+ 
+*/
+
+}
+
+// plugins/dreycorp/pagebuilder/models/settings/fields.yaml
+fields:
+    yandex_metrika_counter_id:
+        label: Yandex.Metrika Counter ID
+        type: text
+        comment: Вставьте ID счетчика Яндекс.Метрики
+
+// plugins/dreycorp/pagebuilder/models/Settings.php
+<?php namespace Dreycorp\PageBuilder\Models;
+
+use Model;
+
+class Settings extends Model
+{
+    public $implement = ['System.Behaviors.SettingsModel'];
+
+    // A unique code
+    public $settingsCode = 'dreycorp_pagebuilder_settings';
+
+    // Reference to field configuration
+    public $settingsFields = 'fields.yaml';
+}
+
+// plugins/dreycorp/pagebuilder/Plugin.php
+<?php namespace Dreycorp\Pagebuilder;
+
+use System\Classes\PluginBase;
+
+class Plugin extends PluginBase
+{
+    public function registerComponents()
+    {
+
+        return [
+            \Dreycorp\Pagebuilder\Components\PartialSetRenderer::class => "partialSetRenderer",
+            \Dreycorp\Pagebuilder\Components\ABTestRenderer::class => "abTestRenderer",
+        ];
+    }
+
+
+
+    public function registerSettings()
+    {
+        return [
+            'config' => [
+                'label'       => 'Page Builder',
+                'description' => 'Настройки плагина Page Builder',
+                'category'    => 'Page Builder',
+                'icon'        => 'icon-code',
+                'class'       => 'Dreycorp\PageBuilder\Models\Settings',
+                'order'       => 500,
+                //'permissions' => ['dreycorp.pagebuilder.access_settings']
+            ]
+        ];
+    }
+        
+    
+
+
+/*
+    public function registerNavigation()
+    {
+        return [
+            'pagebuilder' => [
+                'label'       => 'PageBuilder',
+                'url'         => Backend::url('dreycorp/pagebuilder/partialsets'),
+                'icon'        => 'icon-cubes',
+                'permissions' => ['dreycorp.pagebuilder.*'],
+                'order'       => 500,
+    
+                'sideMenu' => [
+                    'partialsets' => [
+                        'label'       => 'Partial Sets',
+                        'url'         => Backend::url('dreycorp/pagebuilder/partialsets'),
+                        'icon'        => 'icon-th-list',
+                        'permissions' => ['dreycorp.pagebuilder.manage_partials'],
+                        'order'       => 501,
+                    ],
+                    'abtests' => [
+                        'label'       => 'A/B Tests',
+                        'url'         => Backend::url('dreycorp/pagebuilder/abtests'),
+                        'icon'        => 'icon-random',
+                        'permissions' => ['dreycorp.pagebuilder.manage_abtests'],
+                        'order'       => 502,
+                    ],
+                ]
+            ]
+        ];
+    }
+*/
+}
+
+// plugins/dreycorp/pagebuilder/plugin.yaml
+plugin:
+    name: 'dreycorp.pagebuilder::lang.plugin.name'
+    description: 'dreycorp.pagebuilder::lang.plugin.description'
+    author: Dreycorp
+    icon: wn-icon-adjust
+    replaces: {  }
+navigation:
+    pagebuilder:
+        label: 'dreycorp.pagebuilder::lang.plugin.name'
+        url: dreycorp/pagebuilder/partialsets
+        icon: icon-cubes
+        sideMenu:
+            partialsets:
+                label: 'Partial Sets'
+                url: dreycorp/pagebuilder/partialsets
+                icon: icon-th-list
+            abtests:
+                label: 'A/B Tests'
+                url: dreycorp/pagebuilder/abtests
+                icon: icon-random
+
+// plugins/dreycorp/pagebuilder/updates/builder_table_create_dreycorp_pagebuilder_abtest_partialset.php
+<?php namespace Dreycorp\Pagebuilder\Updates;
+
+use Schema;
+use Winter\Storm\Database\Updates\Migration;
+
+class BuilderTableCreateDreycorpPagebuilderAbtestPartialset extends Migration
+{
+    public function up()
+    {
+        Schema::create('dreycorp_pagebuilder_abtest_partialset', function($table)
+        {
+            $table->engine = 'InnoDB';
+            $table->integer('abtest_id')->unsigned();
+            $table->integer('partialset_id')->unsigned();
+            $table->primary(['abtest_id', 'partialset_id'], 'abtest_partialset_primary');
+        });
+    }
+    
+    public function down()
+    {
+        Schema::dropIfExists('dreycorp_pagebuilder_abtest_partialset');
+    }
+}
+
+// plugins/dreycorp/pagebuilder/updates/builder_table_create_dreycorp_pagebuilder_ab_tests.php
+<?php namespace Dreycorp\Pagebuilder\Updates;
+
+use Schema;
+use Winter\Storm\Database\Updates\Migration;
+
+class BuilderTableCreateDreycorpPagebuilderAbTests extends Migration
+{
+    public function up()
+    {
+        Schema::create('dreycorp_pagebuilder_ab_tests', function($table)
+        {
+            $table->engine = 'InnoDB';
+            $table->increments('id')->unsigned();
+            $table->string('name')->nullable();
+            $table->integer('views')->default(0);
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+        });
+    }
+    
+    public function down()
+    {
+        Schema::dropIfExists('dreycorp_pagebuilder_ab_tests');
+    }
+}
+
+// plugins/dreycorp/pagebuilder/updates/builder_table_create_dreycorp_pagebuilder_partial_sets.php
+<?php namespace Dreycorp\Pagebuilder\Updates;
+
+use Schema;
+use Winter\Storm\Database\Updates\Migration;
+
+class BuilderTableCreateDreycorpPagebuilderPartialSets extends Migration
+{
+    public function up()
+    {
+        Schema::create('dreycorp_pagebuilder_partial_sets', function($table)
+        {
+            $table->engine = 'InnoDB';
+            $table->increments('id')->unsigned();
+            $table->string('name')->nullable();
+            $table->json('partials')->nullable();
+            $table->integer('views')->default(0);
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+        });
+    }
+    
+    public function down()
+    {
+        Schema::dropIfExists('dreycorp_pagebuilder_partial_sets');
+    }
+}
+

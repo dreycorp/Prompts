@@ -1,0 +1,1120 @@
+﻿**Техническое задание на разработку функционала психологического чата для сайта на Laravel 11**
+
+---
+
+### **1. Общее описание**
+Разработать систему интерактивного психологического консультирования в формате чата "Вопрос-ответ" с интеграцией внешнего API. 
+- **Стек**: Laravel 11, Livewire 3, Tailwind CSS, Alpine.js.
+- **Интеграция**: Внешнее API для обработки сообщений (пример запроса/ответа приведен в задании).
+- **Целевая аудитория**: Зарегистрированные пользователи с доступом в dashboard.
+
+---
+
+### **2. Функциональные требования**
+
+#### **2.1. Модуль чатов**
+- **Многовидовые чаты**:
+  - Возможность создания нескольких типов чатов (на разные темы) через админку.
+  - Каждый чат имеет уникальные параметры: `API_КЛЮЧ`, `idb`, название, описание.
+- **Интерфейс чата**:
+  - Визуально современный дизайн (Tailwind CSS).
+  - Отображение истории сообщений в реальном времени (Livewire).
+  - Поле ввода сообщения с кнопкой отправки.
+  - Индикатор загрузки ответа от API.
+  - Обработка ошибок API (вывод сообщений об ошибках пользователю).
+- **История сообщений**:
+  - Сохранение всех вопросов и ответов в БД.
+  - Возможность просмотра истории в рамках сессии чата.
+
+#### **2.2. Админ-панель**
+- **Управление чатами**:
+  - CRUD для типов чатов (название, API-ключ, `idb`, описание).
+  - Активация/деактивация чатов.
+- **Тарифы**:
+  - Настройка лимитов: количество чатов в день/неделю/месяц для пользователей.
+  - Привязка тарифов к ролям или группам пользователей (например, базовый/премиум).
+- **Мониторинг**:
+  - Просмотр активных и завершенных чатов.
+  - Статистика по использованию API (количество запросов, затраты).
+
+#### **2.3. Лимиты и тарифы**
+- Проверка лимитов перед началом нового чата.
+- Уведомление пользователя о превышении лимита.
+- Возможность админа настраивать тарифные планы (например, 5 чатов/день для базового тарифа).
+
+#### **2.4. Завершение чата и публикация**
+- Признак `завершен` для чата.
+- Генерация уникальной ссылки для доступа к истории завершенного чата.
+- Интерфейс для просмотра публичной истории (без возможности отправки сообщений).
+
+---
+
+### **3. Технические требования**
+
+#### **3.1. База данных**
+- **Таблицы**:
+  - `chats`: id, user_id, type_id, is_completed, share_hash, created_at.
+  - `chat_types`: id, name, api_key, idb, description, is_active.
+  - `messages`: id, chat_id, content (JSON: message, response, error), is_user, created_at.
+  - `tariffs_ais`: id, name, daily_limit, weekly_limit, monthly_limit.
+  - `user_tariffs`: user_id, tariff_id, valid_until.
+
+#### **3.2. Интеграция с API**
+- Использование стандартного HTTP-клиента Laravel.
+- Обработка ответов API:
+  - Сохранение `response`, `price`, `balance`.
+  - Логирование ошибок (`reaction: error`).
+- Защита ключей: хранение API-ключей в `.env` или зашифрованными в БД.
+
+#### **3.3. Роуты**
+- `GET /chat/{type}` — начать новый чат.
+- `POST /chat/send` — отправить сообщение (Livewire).
+- `GET /chat/history/{share_hash}` — публичная история завершенного чата.
+
+#### **3.4. Компоненты Livewire**
+- `ChatWindow`: Отображение истории, ввод сообщения, отправка данных.
+- `ChatHistoryList`: Список завершенных чатов пользователя.
+- `TariffCounter`: Отображение оставшихся доступных чатов.
+
+---
+
+### **4. Интерфейс**
+- **Дизайн чата**:
+  - Адаптивный интерфейс с анимациями (Alpine.js).
+  - Пузыри сообщений (пользователь/бот) с Tailwind.
+  - Индикатор набора текста ботом (Skeleton loader).
+- **Админка**:
+  - Таблицы с сортировкой и пагинацией.
+  - Формы для настройки чатов и тарифов.
+
+---
+
+### **5. Безопасность**
+- Проверка прав доступа:
+  - Только аутентифицированные пользователи могут создавать чаты.
+  - Middleware для проверки тарифных лимитов.
+- Защита публичных ссылок:
+  - Уникальный хеш `share_hash` (например, UUID).
+  - Отсутствие возможности редактирования завершенных чатов.
+
+----
+
+В качестве психолога консультанта будет API в которое будет присылаться ответ пользователя из чата, а API возвращает результат. Например.
+$url = "https://dewiar.com/dew_ai/api?key=ВАШ_API_КЛЮЧ";
+$data = [
+    "data" => [
+        "message" => "Как дела?",
+        "image" => "",
+        "idb" => 1738315626
+    ]
+];
+$ch = curl_init($url);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$result = curl_exec($ch);
+curl_close($ch);
+echo $result;
+
+ответ:
+{"reaction": "ok", "price": "0.00136", "response": "У меня все отлично! Как твои дела?", "balance": "19.45"}
+Пример ошибки
+{"reaction": "error", "response": "Нет такого ассистента!"}
+--
+
+Надо сделать вспомогательный класс для взаимодействия с апи
+Также, учти что нужно ожидание ответа для пользователя, обработка ошибок, в том числе по таймауту, чтобы пользователь мог продолжить в случае нейдачного ответа.
+---
+
+## Уже реализовано
+
+<x-app-layout>
+    <x-slot name="header">
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+            Доска
+        </h2>
+    </x-slot>
+    
+    <div class="py-12">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 px-2">
+            <div class="grid grid-cols-2 md:grid-cols-3 mb-3 gap-4">
+                <div class=" p-5 bg-white shadow-sm rounded-lg">
+                    <p class="font-medium">
+                        Пройдено
+                    </p>
+                    <div class="flex items-center justify-between pt-4">
+                        <p class="text-sm sm:text-[2vw] font-semibold text-slate-700 dark:text-navy-100">
+                            <a class="underline" href="{{ route('session_history') }}">@plural($diag_cnt , 'сессия')</a>
+                        </p>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-cyan-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>  
+                    </div>
+                </div>
+                <div class=" p-5 bg-white shadow-sm rounded-lg">
+                    <p class="font-medium">
+                        В системе
+                    </p>
+                    <div class="flex items-center justify-between pt-4">
+                        <p class="text-sm sm:text-[2vw] font-semibold text-slate-700 dark:text-navy-100">
+                            @plural($reg_cnt , 'день')
+                            
+                        </p>
+                        <svg class="h-10 w-10 text-amber-700" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg> 
+                    </div>
+                </div>
+                <div class="col-span-2 md:col-span-1 p-5 bg-white shadow-sm rounded-lg">
+                    <p class="font-medium">
+                        Бонусы <a class="text-sm ml-3 underline decoration-dotted" href="{{ route('balls') }}">подробнее | куда протратить</a>
+                    </p>
+                    <div class="flex items-center justify-between pt-4">
+                        <p class="text-sm sm:text-[2vw] font-semibold text-slate-700 dark:text-navy-100">
+                            <span class="text-white rounded-xl bg-green-500 px-3">+ @plural($coin , 'балл')</span>
+                        </p>
+                        <svg class="h-10 w-10 text-red-700" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"></path></svg>
+                    </div>
+                </div>
+            </div>
+            @if (false)
+            <!-- Секция для отображения доступных тестов -->
+            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 px-2 my-6">
+                <h2 class="font-semibold text-2xl text-gray-800 leading-tight">
+                    Доступные тесты
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+                    @foreach($tests as $test)
+                        <div class="bg-gray-100 p-4 rounded-lg shadow-md">
+                            <h3 class="text-lg font-semibold">{{ $test->title }}</h3>
+                            <p class="mt-2">{{ $test->description }}</p>
+                            <a href="{{ route('user.tests.show', $test) }}" class="mt-4 inline-block bg-blue-500 text-white px-4 py-2 rounded">
+                                Пройти тест
+                            </a>
+                        </div>
+                    @endforeach
+                    @if($tests->isEmpty())
+                        <div class="col-span-full text-center text-gray-500">
+                            Тесты не найдены.
+                        </div>
+                    @endif
+                </div>
+            </div>
+            @endif
+
+            @livewire('psychological-chats')
+            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 px-2 my-6">
+                <h2 class="font-semibold text-2xl text-gray-800 leading-tight">
+                    Диагностики
+                </h2>
+            </div>
+            @livewire('session-list',['group'=>2])
+            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 px-2 my-6">
+                <h2 class="font-semibold text-2xl text-gray-800 leading-tight">
+                    Проработки
+                </h2>
+            </div>
+            @livewire('session-list',['group'=>1])
+        </div>
+    </div>
+    @include('layouts.footer')
+</x-app-layout>
+
+<?php
+
+namespace App\Livewire\Admin;
+
+use App\Models\ChatType;
+use Livewire\Component;
+use Illuminate\Support\Facades\Crypt;
+
+class ChatTypesManager extends Component
+{
+    public $chatTypes;
+    public $form = [
+        'name' => '',
+        'idb' => '',
+        'description' => '',
+        'api_key' => '',
+        'is_active' => true
+    ];
+    public $editId = null;
+
+    public function mount()
+    {
+        $this->chatTypes = ChatType::all();
+    }
+
+    public function save()
+    {
+        $data = $this->validate([
+            'form.name' => 'required|string|max:255',
+            'form.idb' => 'required|integer',
+            'form.api_key' => 'required|string',
+            'form.description' => 'nullable|string',
+            'form.is_active' => 'boolean'
+        ]);
+
+        $data['form']['api_key'] = Crypt::encrypt($data['form']['api_key']);
+
+        if ($this->editId) {
+            $chatType = ChatType::find($this->editId);
+            $chatType->update($data['form']);
+        } else {
+            ChatType::create($data['form']);
+        }
+
+        $this->resetForm();
+    }
+
+    public function edit($id)
+    {
+        $chatType = ChatType::find($id);
+        $this->form = $chatType->toArray();
+        $this->form['api_key'] = Crypt::decrypt($chatType->api_key);
+        $this->editId = $id;
+    }
+
+    public function delete($id)
+    {
+        ChatType::destroy($id);
+        $this->mount();
+    }
+
+    private function resetForm()
+    {
+        $this->reset('form', 'editId');
+        $this->mount();
+    }
+
+    public function render()
+    {
+        return view('livewire.admin.chat-types-manager');
+    }
+}
+
+<?php
+
+namespace App\Livewire\Admin;
+
+use App\Models\TariffAi;
+use Livewire\Component;
+
+class TariffsManager extends Component
+{
+    public $tariffs;
+    public $form = [
+        'name' => '',
+        'daily_limit' => 0,
+        'weekly_limit' => 0,
+        'monthly_limit' => 0
+    ];
+    public $editId = null;
+
+    public function mount()
+    {
+        $this->tariffs = TariffAi::all();
+    }
+
+    public function save()
+    {
+        $data = $this->validate([
+            'form.name' => 'required|string|max:255',
+            'form.daily_limit' => 'required|integer|min:0',
+            'form.weekly_limit' => 'required|integer|min:0',
+            'form.monthly_limit' => 'required|integer|min:0'
+        ]);
+
+        if ($this->editId) {
+            $tariff = TariffAi::find($this->editId);
+            $tariff->update($data['form']);
+        } else {
+            TariffAi::create($data['form']);
+        }
+
+        $this->resetForm();
+    }
+
+    public function edit($id)
+    {
+        $tariff = TariffAi::find($id);
+        $this->form = $tariff->toArray();
+        $this->editId = $id;
+    }
+
+    public function delete($id)
+    {
+        TariffAi::destroy($id);
+        $this->mount();
+    }
+
+    private function resetForm()
+    {
+        $this->reset('form', 'editId');
+        $this->mount();
+    }
+
+    public function render()
+    {
+        return view('livewire.admin.tariffs-manager');
+    }
+}
+
+<?php
+
+namespace App\Livewire;
+
+use App\Models\Chat;
+use App\Models\Message;
+use Livewire\Component;
+use App\Models\ChatType;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
+use App\Services\ChatApiService;
+use Parsedown;
+
+class ChatWindow extends Component
+{
+    public Chat $chat;
+    public string $message = '';
+    public $isLoading = false;
+    public $messages = [];
+    public $errorMessage = ''; // Переменная для ошибки
+
+    protected $listeners = ['process-api-request' => 'callApi'];
+
+    public function mount(ChatType $type)
+    {
+        $this->chat = Chat::where('user_id', Auth::id())
+            ->where('chat_type_id', $type->id)
+            ->firstOrCreate(
+                ['user_id' => Auth::id(), 'chat_type_id' => $type->id],
+                ['share_hash' => Str::uuid()]
+            );
+    
+        // Преобразование коллекции в массив и изменение сортировки
+        $this->messages = $this->chat->messages()
+            ->oldest('id')
+            ->get()
+            ->map(function ($message) {
+                return $message->toArray();
+            })
+            ->toArray();
+
+            $this->isLoading = false; // Убеждаемся, что поле ввода не заблокировано при загрузке
+    }
+
+    public function sendMessage()
+    {
+        $this->errorMessage = ''; // Сброс ошибки
+        $this->reset('errorMessage');
+        
+        try {
+            $this->validate(['message' => 'required|string|max:300']);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            
+            $this->errorMessage = 'Превышен лимит: максимум 300 символов!';
+            return true;
+        }
+ 
+        // Сохраняем сообщение пользователя
+        $userMessage = Message::create([
+            'chat_id' => $this->chat->id,
+            'content' => ['message' => $this->message],
+            'is_user' => true,
+        ]);
+    
+        // Добавляем сообщение пользователя и лоадер
+        $this->messages[] = $userMessage->toArray();
+        $this->messages[] = [
+            'id' => 'loader',
+            'is_user' => false,
+            'content' => ['message' => '<div class="chat_spinn"></div>'],
+            'created_at' => now()->toDateTimeString(),
+        ];
+    
+        $this->isLoading = true; // Блокируем ввод
+        
+        
+        // Отправляем запрос к API
+        $this->dispatch('process-api-request', 
+            message: $this->message
+        );
+
+        $this->reset('message');
+        // Запускаем ресайз на клиенте
+        $this->dispatch('reset-textarea');
+    }
+    
+    public function handleApiResponse($response)
+    {
+        // Удаляем лоадер
+        $this->messages = array_filter($this->messages, fn($msg) => $msg['id'] !== 'loader');
+    
+        if ($response['reaction'] === 'ok') {
+            $botMessage = Message::create([
+                'chat_id' => $this->chat->id,
+                'content' => [
+                    'message' => $response['response'],
+                    'price' => $response['price'],
+                    'balance' => $response['balance']
+                ],
+                'is_user' => false,
+            ]);
+            $this->messages[] = $botMessage->toArray();
+        } else {
+            $this->messages[] = [
+                'id' => uniqid(),
+                'is_user' => false,
+                'content' => ['message' => '❌ Не удалось получить ответ. Попробуй еще раз задать вопрос.'],
+                'created_at' => now()->toDateTimeString(),
+            ];
+        }
+    
+        $this->isLoading = false; // Разблокируем ввод
+        $this->dispatch('new-message-received'); // Обновляем прокрутку
+    }
+
+    public function callApi($message)
+    {
+        try {
+            $apiService = app(ChatApiService::class);
+            $response = $apiService->sendMessage($message, $this->chat->chatType->api_key, $this->chat->chatType->idb);
+            $this->handleApiResponse($response);
+        } catch (\Exception $e) {
+            $this->dispatch('show-error', message: 'Сервис временно недоступен');
+            $this->isLoading = false;
+        }
+    }
+
+    public function parseMarkdown($text)
+    {
+        $Parsedown = new Parsedown();
+        //$Parsedown->setBreaksEnabled(true);
+        $text = nl2br($text);
+        $text = htmlspecialchars_decode($text);
+        $text = htmlspecialchars_decode($text);
+
+
+        $text = $Parsedown->text($text);  // Конвертируем Markdown в HTML
+
+        return $this->postProcessResponse($text);
+
+    }
+
+    public function handleEnter()
+    {
+        $this->sendMessage();
+    }
+
+    public function postProcessResponse($text)
+    {
+        // Заменяем специальные фразы на ссылки
+        $replacements = [
+            "[Кнопка 'Записаться']" => "<a href='https://pahorukov.info/zapisatsya-na-prorabotku' target='_blank' class='btn bg-blue-400 mx-3 text-white rounded-md inline-block'>Записаться на консультацию</a>",
+            "Андреем Пахоруковым" => "<a href='https://pahorukov.info' target='_blank' class='text-blue-500 underline'>Андреем Пахоруковым</a>",
+        ];
+
+        // Выполняем замену
+        return str_replace(array_keys($replacements), array_values($replacements), $text);
+    }
+
+
+    public function render()
+    {
+        return view('livewire.chat-window', [
+            //'messages' => $this->messages
+        ]);
+    }
+}
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Chat extends Model
+{
+    use HasFactory;
+    
+    protected $fillable = [
+        'user_id',
+        'chat_type_id',
+        'is_completed',
+        'share_hash',
+    ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function chatType(): BelongsTo
+    {
+        return $this->belongsTo(ChatType::class);
+    }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(Message::class);
+    }
+
+    public function generateShareHash()
+    {
+        $this->update(['share_hash' => Str::uuid()]);
+    }
+}
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class ChatType extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'api_key',
+        'idb',
+        'description',
+        'is_active',
+    ];
+
+    public function chats(): HasMany
+    {
+        return $this->hasMany(Chat::class);
+    }
+}
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Message extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'chat_id',
+        'content',
+        'is_user',
+    ];
+
+    protected $casts = [
+        'content' => 'array',
+    ];
+
+    public function chat(): BelongsTo
+    {
+        return $this->belongsTo(Chat::class);
+    }
+}
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+
+class TariffAi extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'daily_limit',
+        'weekly_limit',
+        'monthly_limit',
+    ];
+
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'user_tariffs')
+            ->withPivot('valid_until');
+    }
+}
+
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
+
+class User extends Authenticatable
+{
+    use HasApiTokens, HasFactory, Notifiable;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var array<int, string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+    ];
+
+    public function dateDiff($now = null)
+    {
+        $now = empty($now) ? now() : $now;
+        $to = \Carbon\Carbon::parse($now);
+        $from = \Carbon\Carbon::parse($this->created_at);
+
+        return $to->diffInDays($from);
+    }
+
+    public function tariff() : BelongsTo
+    {
+        return $this->belongsTo(Tariff::class, 'tariff_id', 'id')->with('rules')->where('is_active', 1);
+    }
+
+    public function tariffAi()
+    {
+        return $this->belongsTo(TariffAi::class, 'current_tariff_id');
+    }
+    
+    public function checkDailyLimit()
+    {
+        $dailyUsage = $this->chats()
+            ->whereDate('created_at', today())
+            ->count();
+    
+        return $dailyUsage < $this->tariff->daily_limit;
+    }
+
+}
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Pivot;
+
+class UserTariff extends Model
+{
+    protected $table = 'user_tariffs';
+
+    protected $fillable = [
+        'user_id',
+        'tariff_id',
+        'valid_until',
+    ];
+}
+
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\View;
+use App\My\SessionSteps;
+use App\Services\ChatApiService;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        $this->app->bind(ChatApiService::class, function ($app) {
+            return new ChatApiService();
+        });
+    }
+
+    /**
+     * Bootstrap any application services.
+     *
+     * @return void
+     */
+    public function boot()
+    {
+        //View::share('SessionSteps', SessionSteps::class);
+    }
+}
+
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+class ChatApiService
+{
+    public function sendMessage(string $message, string $apiKey, int $idb)
+    {
+        if (empty(trim($message)))
+        {
+            return [
+                'reaction' => 'error',
+                'response' => 'Сообщение пустое'
+            ];
+        }
+
+        try {
+            $response = Http::timeout(120)
+                ->retry(2, 100)
+                ->post('https://dewiar.com/dew_ai/api?key='.$apiKey, [
+                    'data' => [
+                        'message' => $message,
+                        'image' => '',
+                        'idb' => $idb
+                    ]
+                ]);
+
+            return $this->handleResponse($response);
+        } catch (\Exception $e) {
+            Log::error('API Error: '.$e->getMessage());
+            return [
+                'reaction' => 'error',
+                'response' => 'Сервис временно недоступен. Попробуйте позже.'
+            ];
+        }
+    }
+
+    private function handleResponse($response)
+    {
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return [
+            'reaction' => 'error',
+            'response' => 'Ошибка соединения с API (код '.$response->status().')'
+        ];
+    }
+}
+
+<div class="p-6 bg-white rounded-lg shadow">
+    <h2 class="text-xl font-bold mb-4">Управление типами чатов</h2>
+
+    <form wire:submit="save" class="space-y-4 mb-6">
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <x-input-label value="Название типа" />
+                <x-text-input wire:model.live="form.name" class="w-full" />
+            </div>
+            
+            <div>
+                <x-input-label value="IDB" />
+                <x-text-input wire:model.live="form.idb" type="number" class="w-full" />
+            </div>
+        </div>
+
+        <div>
+            <x-input-label value="API Key" />
+            <x-text-input wire:model.live="form.api_key" class="w-full" />
+        </div>
+
+        <div>
+            <x-input-label value="Описание" />
+            <x-textarea wire:model.live="form.description" class="w-full" rows="3" />
+        </div>
+
+        <div class="flex items-center gap-2">
+            <x-checkbox wire:model.live="form.is_active" />
+            <x-input-label value="Активный" />
+        </div>
+
+        <x-primary-button type="submit">
+            {{ $editId ? 'Обновить' : 'Создать' }}
+        </x-primary-button>
+    </form>
+
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left">Название</th>
+                    <th class="px-6 py-3 text-left">IDB</th>
+                    <th class="px-6 py-3 text-left">Активен</th>
+                    <th class="px-6 py-3 text-left">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                @foreach($chatTypes as $type)
+                <tr>
+                    <td class="px-6 py-4">{{ $type->name }}</td>
+                    <td class="px-6 py-4">{{ $type->idb }}</td>
+                    <td class="px-6 py-4">{{ $type->is_active ? 'Да' : 'Нет' }}</td>
+                    <td class="px-6 py-4 flex gap-2">
+                        <x-secondary-button wire:click="edit({{ $type->id }})">
+                            <x-heroicon-o-pencil class="w-4 h-4" />
+                        </x-secondary-button>
+                        <x-danger-button wire:click="delete({{ $type->id }})">
+                            <x-heroicon-o-trash class="w-4 h-4" />
+                        </x-danger-button>
+                    </td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="p-6 bg-white rounded-lg shadow">
+    <h2 class="text-xl font-bold mb-4">Управление тарифами</h2>
+
+    <form wire:submit="save" class="space-y-4 mb-6">
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <x-input-label value="Название тарифа" />
+                <x-text-input wire:model.live="form.name" class="w-full" />
+            </div>
+            
+            <div>
+                <x-input-label value="Дневной лимит" />
+                <x-text-input wire:model.live="form.daily_limit" type="number" class="w-full" />
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <x-input-label value="Недельный лимит" />
+                <x-text-input wire:model.live="form.weekly_limit" type="number" class="w-full" />
+            </div>
+            
+            <div>
+                <x-input-label value="Месячный лимит" />
+                <x-text-input wire:model.live="form.monthly_limit" type="number" class="w-full" />
+            </div>
+        </div>
+
+        <x-primary-button type="submit">
+            {{ $editId ? 'Обновить' : 'Создать' }}
+        </x-primary-button>
+    </form>
+
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left">Название</th>
+                    <th class="px-6 py-3 text-left">День</th>
+                    <th class="px-6 py-3 text-left">Неделя</th>
+                    <th class="px-6 py-3 text-left">Месяц</th>
+                    <th class="px-6 py-3 text-left">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                @foreach($tariffs as $tariff)
+                <tr>
+                    <td class="px-6 py-4">{{ $tariff->name }}</td>
+                    <td class="px-6 py-4">{{ $tariff->daily_limit }}</td>
+                    <td class="px-6 py-4">{{ $tariff->weekly_limit }}</td>
+                    <td class="px-6 py-4">{{ $tariff->monthly_limit }}</td>
+                    <td class="px-6 py-4 flex gap-2">
+                        <x-secondary-button wire:click="edit({{ $tariff->id }})">
+                            <x-heroicon-o-pencil class="w-4 h-4" />
+                        </x-secondary-button>
+                        <x-danger-button wire:click="delete({{ $tariff->id }})">
+                            <x-heroicon-o-trash class="w-4 h-4" />
+                        </x-danger-button>
+                    </td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="flex flex-col h-full bg-white rounded-lg shadow-sm mb-14">
+    <!-- История сообщений (основная область) -->
+    <div id="chat-messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-3">
+        @foreach ($messages as $message)
+            <div class="flex items-start gap-3" wire:key="{{ $message['id'] ?? uniqid() }}">
+                <!-- Иконка бота -->
+                @if(!$message['is_user'])
+                    <div class="w-10 h-10 flex items-center justify-center bg-gray-200 rounded-full">
+                        🤖
+                    </div>
+                @endif
+
+                <!-- Сообщение -->
+                <div class="@if($message['is_user']) bg-blue-100 ml-auto @else bg-gray-100 @endif 
+                            rounded-xl p-3 max-w-[80%] shadow">
+                    <p class="text-gray-800">{!! $this->parseMarkdown($message['content']['message']) !!}</p>
+                    @if(!$message['is_user'] && isset($message['content']['price']) && false)
+                    <p class="text-xs text-gray-500 mt-1">
+                        Стоимость: {{ $message['content']['price'] }} | Баланс: {{ $message['content']['balance'] }}
+                    </p>
+                    @endif
+                </div>
+            </div>
+        @endforeach 
+    </div>
+
+    <!-- Форма ввода сообщения (фиксирована внизу) -->
+    <div class="p-4 fixed bottom-0 left-0 right-0 max-w-7xl mx-auto  sm:px-6 lg:px-8 px-2">
+        <form wire:submit="sendMessage" class="flex gap-2">
+            <div class="relative p-4 bg-white rounded-2xl shadow-lg flex items-end gap-2 border w-full">
+                <!-- Поле ввода -->
+                <textarea 
+                wire:model="message"
+                wire:ignore
+                x-ref="textarea"
+                class="flex-1 p-3 resize-none border-0 outline-none focus:ring-0 text-gray-800 bg-transparent"
+                rows="1"
+                placeholder="Введите сообщение..."
+                x-data="{
+                    resize() {
+                        let ta = this.$refs.textarea;
+                        ta.style.height = 'auto';
+                        ta.style.height = ta.scrollHeight + 'px';
+                    }
+                }"
+                x-on:input="resize()"
+                x-on:keydown.enter.prevent="if (!event.ctrlKey && !$wire.isLoading) { $wire.sendMessage(); }"
+                x-on:keydown.ctrl.enter.prevent="let ta = $el; ta.value += '\n'; ta.dispatchEvent(new Event('input'));"
+                x-init="$watch('$wire.message', () => resize())"
+            ></textarea>
+            
+
+        
+                <!-- Кнопка отправки -->
+                <button 
+                    type="submit"
+                    wire:ignore
+                    class="bg-blue-500 hover:bg-blue-600 text-white w-12 h-12 flex items-center justify-center rounded-full shadow-md"
+                    x-bind:disabled="$wire.isLoading"
+                    :class="{ 'opacity-50 cursor-not-allowed': $wire.isLoading }"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            </div>
+        </form>
+        
+        
+
+
+        @if ($errorMessage)
+            <div class="text-red-500 mt-2 text-sm">
+                {{ $errorMessage }}
+            </div>
+        @endif
+        
+    </div>
+</div>
+
+
+@push('scripts')
+<script>
+    Livewire.on('process-api-request', (data) => {
+        // Принудительный скролл к последнему сообщению
+        const container = document.getElementById('chat-messages');
+        container.scrollTop = container.scrollHeight;
+    });
+    Livewire.on('reset-textarea', () => {
+        const textarea = document.querySelector('[x-ref="textarea"]');
+        if (textarea) {
+            textarea.style.height = 'auto';
+        }
+    });
+    function scrollToBottom() {
+        setTimeout(() => {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }, 100);
+    }
+
+    Livewire.on('process-api-request', scrollToBottom);
+    Livewire.hook('message.processed', scrollToBottom);
+    Livewire.on('new-message-received', scrollToBottom);
+</script>
+@endpush
+
+<div class="mx-auto p-6 bg-white rounded-lg shadow-lg">
+    <h2 class="text-2xl font-bold mb-4">Психолог AI</h2>
+
+    <div class="space-y-4">
+        @foreach ($chatTypes as $chat)
+            <div class="p-4 bg-gray-100 rounded-lg shadow-sm">
+                <h3 class="text-lg font-semibold">{{ $chat->name }}</h3>
+                
+                <div x-data="{ expanded: false }">
+                    <!-- Обрезанное описание -->
+                    <div class="text-gray-600" x-show="!expanded">
+                        {{ Str::limit(strip_tags($chat->description), 100) }}...
+                    </div>
+                    
+                    <!-- Полное описание -->
+                    <div class="text-gray-600" x-show="expanded" x-cloak>
+                        {!! $chat->description !!}
+                    </div>
+
+                    <!-- Кнопка развернуть/скрыть -->
+                    <button @click="expanded = !expanded" class="text-blue-500 hover:underline mt-2">
+                        <span x-show="!expanded">📖 Развернуть</span>
+                        <span x-show="!expanded">📖 Развернуть</span>
+                        <span x-show="expanded">🔽 Скрыть</span> 
+                    </button>
+                </div>
+
+                <a href="{{ route('chat', $chat->id) }}" 
+                   class="mt-2 inline-block bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">
+                   Перейти в чат
+                </a>
+            </div>
+        @endforeach
+    </div>
+</div>
+
+<x-app-layout>
+    <x-slot name="header">
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+            Мой психологический чат
+        </h2>
+    </x-slot>
+
+    <div class="py-12">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 px-2">
+            @livewire('chat-window', ['type' => $type])
+        </div>
+    </div>
+</x-app-layout>
+
