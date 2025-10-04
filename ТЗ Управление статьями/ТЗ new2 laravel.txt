@@ -1,0 +1,1883 @@
+# Техническое задание (ТЗ)  
+**Проект:** Система учета и создания текстового контента на Laravel 12  
+
+---
+
+## **1. Цель системы**  
+Создать инструмент для управления процессом создания текстового контента (статей, видео, шортсов и т.д.) через последовательные этапы. Пользователи смогут:  
+- Создавать **серии** с настраиваемыми типами и этапами.  
+- Управлять **задачами** (элементами), проходящими через этапы.  
+- Использовать **промпты** для генерации контента с помощью ИИ.  
+- Отслеживать прогресс и оценивать результаты.  
+
+---
+
+## **2. Основные сущности**  
+
+### **2.1. Тип серии (`SeriesType`)**  
+| Поле             | Тип          | Описание                     |  
+|------------------|--------------|------------------------------|  
+| `id`             | BIGINT       | Уникальный идентификатор     |  
+| `name`           | VARCHAR(255) | Название типа серии          |  
+| `description`    | TEXT         | Описание                     |  
+| `stages`         | JSON         | Этапы (например: ["Идея", "Черновик", "Редактирование", "Публикация"]) |  
+| `created_at`     | TIMESTAMP    | Дата создания                |  
+
+### **2.2. Серия (`Series`)**  
+| Поле               | Тип          | Описание                     |  
+|--------------------|--------------|------------------------------|  
+| `id`               | BIGINT       | Уникальный идентификатор     |  
+| `name`             | VARCHAR(255) | Название серии               |  
+| `description`      | TEXT         | Описание                     |  
+| `series_type_id`   | BIGINT       | Связь с `SeriesType`        |  
+| `total_tasks`      | INT          | Общее количество задач      |  
+| `completed_tasks`  | INT          | Количество завершенных задач|  
+| `created_at`       | TIMESTAMP    | Дата создания                |  
+
+### **2.3. Задача (`Task`)**  
+| Поле              | Тип          | Описание                     |  
+|-------------------|--------------|------------------------------|  
+| `id`              | BIGINT       | Уникальный идентификатор     |  
+| `name`            | VARCHAR(255) | Название задачи              |  
+| `series_id`       | BIGINT       | Связь с `Series`            |  
+| `status`          | ENUM         | Статус: draft/in_progress/completed |  
+| `rating`          | TINYINT      | Рейтинг (1–10)               |  
+| `created_at`      | TIMESTAMP    | Дата создания                |  
+
+### **2.4. Этап задачи (`TaskStageContent`)**  
+| Поле            | Тип          | Описание                     |  
+|-----------------|--------------|------------------------------|  
+| `id`            | BIGINT       | Уникальный идентификатор     |  
+| `task_id`       | BIGINT       | Связь с `Task`              |  
+| `stage_name`    | VARCHAR(255) | Название этапа               |  
+| `content`       | TEXT         | Текстовое содержимое этапа   |  
+
+### **2.5. Промпт (`Prompt`)**  
+| Поле          | Тип          | Описание                     |  
+|---------------|--------------|------------------------------|  
+| `id`          | BIGINT       | Уникальный идентификатор     |  
+| `name`        | VARCHAR(255) | Название промпта             |  
+| `text`        | TEXT         | Текст промпта                |  
+| `type`        | VARCHAR(255) | Тип промпта                  |  
+| `version`     | VARCHAR(255) | Версия промпта               |  
+| `user_id`     | BIGINT       | Связь с пользователем       |  
+
+### **2.6. Лог ИИ (`AILog`)**  
+| Поле          | Тип          | Описание                     |  
+|---------------|--------------|------------------------------|  
+| `id`          | BIGINT       | Уникальный идентификатор     |  
+| `task_id`     | BIGINT       | Связь с `Task`              |  
+| `prompt_id`   | BIGINT       | Связь с `Prompt`            |  
+| `input`       | TEXT         | Входные данные для ИИ        |  
+| `output`      | TEXT         | Результат от ИИ              |  
+
+---
+
+## **3. Функциональные требования**  
+
+### **3.1. Управление типами серий**  
+- Администратор (или все пользователи) могут:  
+  - Создавать/редактировать/удалять типы серий.  
+  - Задавать этапы для типа серии (JSON-массив).  
+
+### **3.2. Управление сериями**  
+- Пользователь может:  
+  - Создать серию, выбрав тип.  
+  - Просмотреть список серий с количеством задач и прогрессом.  
+
+### **3.3. Управление задачами**  
+- Пользователь может:  
+  - Создать задачу в серии.  
+  - Переходить между этапами **только последовательно**.  
+  - Сохранять текстовое содержимое этапа.  
+  - Устанавливать рейтинг (1-10).  
+  - Отмечать задачу как завершенную (все этапы пройдены).  
+
+### **3.4. Интеграция с ИИ**  
+- На каждом этапе:  
+  - Кнопка "Открыть ИИ-диалог".  
+  - Выбор промпта из списка (приватные для пользователя).  
+  - Передача контента предыдущих этапов и текущего промпта.  
+  - Сохранение результата в `AILog`.  
+
+### **3.5. Интерфейс**  
+- **Главная страница:**  
+  - Список серий с фильтрацией по типу и статусу.  
+- **Страница серии:**  
+  - Список задач с сортировкой по рейтингу и статусу.  
+  - Цветовая индикация:  
+    - Завершённые задачи: серый фон.  
+    - Активный этап: синий таб.  
+    - Завершённый этап: зелёный таб с галочкой.  
+- **Модальное окно ИИ-диалога:**  
+  - Выбор промпта.  
+  - Отображение истории запросов для задачи.  
+
+---
+
+## **4. Технические требования**  
+
+### **4.1. Стек**  
+- **Backend:** Laravel 12, PHP 8.2+, MySQL.  
+- **Frontend:** Livewire, Tailwind CSS, Flux UI.  
+- **ИИ:** Интеграция с 2 API (например, OpenAI и YandexGPT).  
+
+### **4.2. База данных**  
+```sql
+-- SeriesType
+CREATE TABLE series_types (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    description TEXT,
+    stages JSON,
+    created_at TIMESTAMP
+);
+
+-- Series
+CREATE TABLE series (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    description TEXT,
+    series_type_id BIGINT UNSIGNED,
+    total_tasks INT DEFAULT 0,
+    completed_tasks INT DEFAULT 0,
+    FOREIGN KEY (series_type_id) REFERENCES series_types(id)
+);
+
+-- Task
+CREATE TABLE tasks (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    series_id BIGINT UNSIGNED,
+    status ENUM('draft', 'in_progress', 'completed') DEFAULT 'draft',
+    rating TINYINT CHECK (rating BETWEEN 1 AND 10),
+    FOREIGN KEY (series_id) REFERENCES series(id)
+);
+
+-- TaskStageContent
+CREATE TABLE task_stage_contents (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    task_id BIGINT UNSIGNED,
+    stage_name VARCHAR(255),
+    content TEXT,
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
+-- Prompt
+CREATE TABLE prompts (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    text TEXT,
+    type VARCHAR(255),
+    version VARCHAR(255),
+    user_id BIGINT UNSIGNED,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- AILog
+CREATE TABLE ai_logs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    task_id BIGINT UNSIGNED,
+    prompt_id BIGINT UNSIGNED,
+    input TEXT,
+    output TEXT,
+    FOREIGN KEY (task_id) REFERENCES tasks(id),
+    FOREIGN KEY (prompt_id) REFERENCES prompts(id)
+);
+```
+
+### **4.3. Аутентификация**  
+- Использовать Laravel Breeze.  
+- Промпты и логи привязаны к пользователю.  
+
+### **4.4. Логика этапов**  
+- Проверка последовательности этапов через middleware Livewire.  
+- Пример:  
+  ```php
+  // В контроллере или Livewire-компоненте
+  public function goToNextStage(Task $task, string $currentStage) {
+      $seriesType = $task->series->seriesType;
+      $stages = json_decode($seriesType->stages);
+      $currentIndex = array_search($currentStage, $stages);
+      
+      if ($currentIndex === false || $currentIndex === count($stages) - 1) {
+          return redirect()->back();
+      }
+      
+      $nextStage = $stages[$currentIndex + 1];
+      // Логика перехода
+  }
+  ```
+
+---
+
+## **5. Расширяемость**  
+- **Будущие фичи:**  
+  - Экспорт задач в PDF/DOCX.  
+  - Интеграция с CMS для публикации.  
+  - Поддержка медиафайлов (изображения, видео).  
+
+---
+
+## **6. Пример использования**  
+1. **Администратор** создает тип серии "Статьи" с этапами: `["Идея", "Черновик", "Редактирование", "Публикация"]`.  
+2. **Пользователь** создает серию "SEO-статьи" с типом "Статьи".  
+3. Добавляет задачу "Как заработать в интернете":  
+   - На этапе "Идея" пишет текст.  
+   - Переходит к "Черновик", используя промпт "Расшири идею до 500 слов".  
+   - Сохраняет результат и завершает задачу.  
+4. Устанавливает рейтинг 8/10.  
+
+---
+
+
+# Уже существующий код
+
+// routes/web.php
+<?php
+
+use App\Livewire\Settings\Profile;
+use App\Livewire\Settings\Password;
+use App\Livewire\Settings\Appearance;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\TaskController;
+use App\Http\Controllers\SeriesController;
+use App\Http\Controllers\SeriesTypeController;
+
+
+Route::get('/', function () {
+    return view('welcome');
+})->name('home');
+
+Route::view('dashboard', 'dashboard')
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
+
+Route::middleware(['auth'])->group(function () {
+    Route::redirect('settings', 'settings/profile');
+
+    Route::get('settings/profile', Profile::class)->name('settings.profile');
+    Route::get('settings/password', Password::class)->name('settings.password');
+    Route::get('settings/appearance', Appearance::class)->name('settings.appearance');
+});
+
+require __DIR__.'/auth.php';
+
+
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/series-types', [SeriesTypeController::class, 'index'])->name('series-types.index');
+    Route::get('/tasks/{id}', [TaskController::class, 'show'])->name('tasks.show');
+    Route::view('/prompts', 'prompts.index')->name('prompts.index');
+
+    Route::get('/series/{id}', [SeriesController::class, 'show'])->name('series.show');
+});
+
+// app/Http/Controllers/SeriesController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Series;
+use Illuminate\Http\Request;
+
+class SeriesController extends Controller
+{
+    public function show($id)
+    {
+        $series = Series::with(['seriesType', 'tasks'])->findOrFail($id);
+        return view('series.show', compact('series'));
+    }
+}
+
+// app/Http/Controllers/SeriesTypeController.php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+
+class SeriesTypeController extends Controller
+{
+    public function index()
+    {
+        return view('series-types.index');
+    }
+}
+
+// app/Http/Controllers/TaskController.php
+<?php 
+
+namespace App\Http\Controllers;
+
+use App\Models\Task;
+
+class TaskController extends Controller
+{
+    public function show($id)
+    {
+        $task = Task::with(['series.seriesType', 'stageContents'])->findOrFail($id);
+        return view('tasks.show', compact('task'));
+    }
+}
+
+// app/Livewire/Prompts/Manager.php
+<?php
+
+namespace App\Livewire\Prompts;
+
+use Livewire\Component;
+use App\Models\Prompt;
+use Illuminate\Support\Facades\Auth;
+use Flux\Flux;
+
+class Manager extends Component
+{
+    public $prompts;
+
+    // Для формы
+    public $showModal = false;
+    public $editingId = null;
+    public $name = '';
+    public $text = '';
+    public $type = '';
+    public $version = '';
+
+    protected $rules = [
+        'name' => 'required|string|max:255',
+        'text' => 'required|string',
+        'type' => 'nullable|string|max:255',
+        'version' => 'nullable|string|max:255',
+    ];
+
+    public function mount()
+    {
+        $this->reloadPrompts();
+    }
+
+    public function reloadPrompts()
+    {
+        $this->prompts = Prompt::where('user_id', Auth::id())->latest()->get();
+    }
+
+    public function create()
+    {
+        $this->reset(['editingId', 'name', 'text', 'type', 'version']);
+        $this->showModal = true;
+        Flux::modal('prompt-modal')->show();
+    }
+
+    public function edit($id)
+    {
+        $prompt = Prompt::where('user_id', Auth::id())->findOrFail($id);
+
+        $this->editingId = $prompt->id;
+        $this->name = $prompt->name;
+        $this->text = $prompt->text;
+        $this->type = $prompt->type;
+        $this->version = $prompt->version;
+
+        $this->showModal = true;
+        Flux::modal('prompt-modal')->show();
+    }
+
+    public function save()
+    {
+        $this->validate();
+
+        $data = [
+            'name' => $this->name,
+            'text' => $this->text,
+            'type' => $this->type,
+            'version' => $this->version,
+            'user_id' => Auth::id(),
+        ];
+
+        if ($this->editingId) {
+            Prompt::where('id', $this->editingId)->where('user_id', Auth::id())->update($data);
+        } else {
+            Prompt::create($data);
+        }
+
+        Flux::modal('prompt-modal')->close();
+        $this->showModal = false;
+        $this->reloadPrompts();
+    }
+
+    public function delete($id)
+    {
+        Prompt::where('id', $id)->where('user_id', Auth::id())->delete();
+        $this->reloadPrompts();
+    }
+
+    public function render()
+    {
+        return view('livewire.prompts.manager');
+    }
+}
+
+// app/Livewire/Series/ListSeries.php
+<?php
+
+namespace App\Livewire\Series;
+
+use Flux\Flux;
+use App\Models\Series;
+use Livewire\Component;
+use App\Models\SeriesType;
+use Livewire\WithPagination;
+
+class ListSeries extends Component
+{
+use WithPagination;
+
+    public $showModal = false;
+    public $editingId = null;
+
+    public $name = '';
+    public $description = '';
+    public $series_type_id = null;
+
+    protected $rules = [
+        'name' => 'required|string|max:255',
+        'description' => 'nullable|string',
+        'series_type_id' => 'required|exists:series_types,id',
+    ];
+
+    public function mount()
+    {
+        if (!$this->series_type_id && SeriesType::exists()) {
+            $this->series_type_id = SeriesType::first()->id;
+        }
+    }
+
+    public function create()
+    {
+        $this->reset(['editingId', 'name', 'description', 'series_type_id']);
+        $this->showModal = true;
+    }
+
+    public function edit($id)
+    {
+        $series = Series::findOrFail($id);
+
+        $this->editingId = $series->id;
+        $this->name = $series->name;
+        $this->description = $series->description;
+        $this->series_type_id = $series->series_type_id;
+
+        Flux::modal('series-modal')->show();
+    }
+
+
+
+    public function save()
+    {
+        $this->validate();
+
+        $data = [
+            'name' => $this->name,
+            'description' => $this->description,
+            'series_type_id' => $this->series_type_id,
+        ];
+
+        if ($this->editingId) {
+            Series::find($this->editingId)?->update($data);
+        } else {
+            Series::create($data);
+        }
+
+        $this->dispatch('close-modal', name: 'series-modal');
+        $this->reset(['editingId', 'name', 'description']);
+    }
+
+
+
+    public function delete($id)
+    {
+        Series::destroy($id);
+    }
+
+    public function render()
+    {
+        return view('livewire.series.list-series', [
+            'seriesList' => Series::with('seriesType')->latest()->get(),
+            'types' => SeriesType::all(),
+        ]);
+    }
+
+}
+
+// app/Livewire/Tasks/Create.php
+<?php
+
+namespace App\Livewire\Tasks;
+
+use Flux\Flux;
+use App\Models\Task;
+use Livewire\Component;
+use Illuminate\Validation\Rule;
+
+class Create extends Component
+{
+    public $seriesId;
+    public $name = '';
+
+    public function save()
+    {
+        $this->validate([
+            'name' => 'required|string|max:255',
+        ]);
+
+        
+
+        $task = Task::create([
+            'name' => $this->name,
+            'series_id' => $this->seriesId,
+            'status' => 'draft',
+        ]);
+
+        $this->reset('name');
+        $this->dispatch('task-created');
+    
+        $seria = $task->series;
+        $seria->total_tasks = $seria->tasks()->count();
+        $seria->completed_tasks = $seria->tasks()->where('status', 'completed')->count();
+        $seria->save();
+
+        Flux::modal('create-task')->close();
+    }
+
+    public function render()
+    {
+        return view('livewire.tasks.create');
+    }
+}
+
+// app/Livewire/Tasks/TaskList.php
+<?php
+
+namespace App\Livewire\Tasks;
+
+use App\Models\Series;
+use App\Models\Task;
+use Livewire\Component;
+use Flux\Flux;
+
+class TaskList extends Component
+{
+    public $series;
+
+    public $editingTaskId = null;
+    public $editingTaskName = '';
+
+    protected $listeners = ['task-created' => '$refresh'];
+
+    public function mount(Series $series)
+    {
+        $this->series = $series->load('tasks');
+    }
+    public function setRating($taskId, $rating)
+    {
+        $task = Task::findOrFail($taskId);
+        $task->rating = $rating;
+        $task->save();
+
+        // Для обновления общего прогресса серии (если нужно)
+        $this->series = $this->series->fresh('tasks');
+    }
+
+    public function deleteTask($id)
+    {
+        Task::destroy($id);
+        $this->series = $this->series->fresh('tasks');
+    }
+
+    public function openEditModal($id)
+    {
+        $task = Task::findOrFail($id);
+        $this->editingTaskId = $task->id;
+        $this->editingTaskName = $task->name;
+
+        // Открываем flux-модалку с именем 'edit-task'
+        Flux::modal('edit-task')->show();
+    }
+
+    public function saveEdit()
+    {
+        $this->validate([
+            'editingTaskName' => 'required|string|max:255',
+        ]);
+
+        Task::where('id', $this->editingTaskId)
+            ->update(['name' => $this->editingTaskName]);
+
+        // Закрываем модалку
+        Flux::modal('edit-task')->close();
+
+        $this->series = $this->series->fresh('tasks');
+    }
+
+    public function render()
+    {
+        // Сортировка задач по рейтингу (сначала с рейтингом, потом без рейтинга)
+        $tasks = $this->series->tasks
+            ->sortByDesc(fn($task) => $task->rating ?? 0)
+            ->values();
+
+        return view('livewire.tasks.task-list', [
+            'tasks' => $tasks,
+        ]);
+    }
+}
+
+// app/Livewire/Tasks/Stages.php
+<?php
+
+namespace App\Livewire\Tasks;
+
+use App\Models\Task;
+use App\Models\TaskStageContent;
+use Livewire\Component;
+use App\Models\TaskStageMessage;
+use App\Models\Prompt;
+use App\Services\OpenRouterApi;
+use Illuminate\Support\Facades\Auth;
+
+class Stages extends Component
+{
+    public Task $task;
+    public array $stages = [];
+
+    public $activeStage;
+    public $content = '';
+
+    public $aiChatOpen = false;
+    public $chatMessages = [];
+    public $chatInput = '';
+    public $selectedPromptId = null;
+    public $modelName = 'deepseek/deepseek-r1-0528-qwen3-8b:free';
+    public $prompts = [];
+    public $showSetupForm = false;
+
+    public $aiLoading = false;
+    public $aiError = null;
+
+    public $useSeriesDescription = false;
+
+    public function mount(Task $task)
+    {
+        $this->task = $task->load('stageContents', 'series.seriesType');
+        $this->stages = $task->series->seriesType->stages;
+
+        // Найдём первый незаполненный этап или откроем первый
+        foreach ($this->stages as $stage) {
+            if (!$this->hasContent($stage)) {
+                $this->activeStage = $stage;
+                break;
+            }
+        }
+
+        $this->prompts = Prompt::where('user_id', Auth::id())->get();
+
+        $this->activeStage ??= $this->stages[0];
+        $this->loadContent();
+    }
+    public function takeLastAiAnswer()
+    {
+        $last = TaskStageMessage::where('task_id', $this->task->id)
+            ->where('stage_name', $this->activeStage)
+            ->where('role', 'assistant')
+            ->latest()
+            ->first();
+        if ($last) {
+            $this->content = $last->content;
+        }
+    }
+    public function openAiChat()
+    {
+        $this->aiChatOpen = true;
+        $this->loadChatMessages();
+    }
+
+    public function loadChatMessages()
+    {
+        $this->chatMessages = TaskStageMessage::where('task_id', $this->task->id)
+            ->where('stage_name', $this->activeStage)
+            ->orderBy('created_at')
+            ->get()
+            ->toArray();
+
+        $this->showSetupForm = count($this->chatMessages) === 0;
+        $this->dispatch('ai-history-scroll');
+    }
+
+    public function sendFirstAiRequest()
+    {
+        $this->validate([
+            'selectedPromptId' => 'required|exists:prompts,id',
+            'modelName' => 'required|string|min:1',
+        ]);
+        $this->aiLoading = true;
+        $this->aiError = null;
+
+        try {
+            $prompt = Prompt::findOrFail($this->selectedPromptId);
+
+            // Источник данных из предыдущего этапа
+            $prevStageIndex = array_search($this->activeStage, $this->stages) - 1;
+            $prevStageName = $this->stages[$prevStageIndex] ?? null;
+            $prevStageContent = null;
+            if ($prevStageName) {
+                $prevStageContent = $this->task->stageContents->firstWhere('stage_name', $prevStageName)->content ?? null;
+            }
+
+            $messages = [
+                ['role' => 'system', 'content' => $prompt->text],
+            ];
+
+            // chatInput — только если НЕ пустое
+            if (filled($this->chatInput)) {
+                $messages[] = ['role' => 'user', 'content' => $this->chatInput];
+            }
+
+            // Используем описание серии, если нужно
+            if ($this->useSeriesDescription && filled($this->task->series->description)) {
+                $messages[] = [
+                    'role' => 'user',
+                    'content' => $this->task->series->description,
+                ];
+            }
+
+            // Из предыдущего этапа
+            if ($prevStageContent) {
+                $messages[] = ['role' => 'user', 'content' => $prevStageContent];
+            }
+
+            // Сохраняем в историю
+            TaskStageMessage::create([
+                'task_id' => $this->task->id,
+                'stage_name' => $this->activeStage,
+                'role' => 'system',
+                'content' => $prompt->text,
+            ]);
+            if (filled($this->chatInput)) {
+                TaskStageMessage::create([
+                    'task_id' => $this->task->id,
+                    'stage_name' => $this->activeStage,
+                    'role' => 'user',
+                    'content' => $this->chatInput,
+                ]);
+            }
+            if ($this->useSeriesDescription && filled($this->task->series->description)) {
+                TaskStageMessage::create([
+                    'task_id' => $this->task->id,
+                    'stage_name' => $this->activeStage,
+                    'role' => 'user',
+                    'content' => $this->task->series->description,
+                ]);
+            }
+            if ($prevStageContent) {
+                TaskStageMessage::create([
+                    'task_id' => $this->task->id,
+                    'stage_name' => $this->activeStage,
+                    'role' => 'user',
+                    'content' => $prevStageContent,
+                ]);
+            }
+
+            // Запрос к AI
+            $api = app(\App\Services\OpenRouterApi::class);
+            $response = $api->chatCompletion($this->modelName, $messages);
+
+            // Ответ ассистента
+            foreach ($response['choices'] ?? [] as $choice) {
+                TaskStageMessage::create([
+                    'task_id' => $this->task->id,
+                    'stage_name' => $this->activeStage,
+                    'role' => $choice['message']['role'] ?? 'assistant',
+                    'content' => $choice['message']['content'] ?? '',
+                ]);
+            }
+
+            $this->chatInput = '';
+            $this->loadChatMessages();
+            $this->showSetupForm = false;
+        } catch (\Throwable $e) {
+            $this->aiError = $e->getMessage();
+        }
+        $this->aiLoading = false;
+    }
+
+
+    public function sendAiChatMessage()
+    {
+        $this->validate([
+            'chatInput' => 'required|string|min:1',
+            'modelName' => 'required|string|min:1',
+        ]);
+        $this->aiLoading = true;
+        $this->aiError = null;
+
+        try {
+            // История сообщений
+            $history = TaskStageMessage::where('task_id', $this->task->id)
+                ->where('stage_name', $this->activeStage)
+                ->orderBy('created_at')
+                ->get(['role', 'content'])
+                ->toArray();
+
+            $history[] = ['role' => 'user', 'content' => $this->chatInput];
+
+            // Сохраняем в историю
+            TaskStageMessage::create([
+                'task_id' => $this->task->id,
+                'stage_name' => $this->activeStage,
+                'role' => 'user',
+                'content' => $this->chatInput,
+            ]);
+
+            $api = app(OpenRouterApi::class);
+            $response = $api->chatCompletion($this->modelName, $history);
+
+            foreach ($response['choices'] ?? [] as $choice) {
+                TaskStageMessage::create([
+                    'task_id' => $this->task->id,
+                    'stage_name' => $this->activeStage,
+                    'role' => $choice['message']['role'] ?? 'assistant',
+                    'content' => $choice['message']['content'] ?? '',
+                ]);
+            }
+
+            $this->chatInput = '';
+            $this->loadChatMessages();
+        } catch (\Throwable $e) {
+            $this->aiError = $e->getMessage();
+        }
+        $this->aiLoading = false;
+    }
+
+
+    public function updatedActiveStage()
+    {
+        $this->loadContent();
+    }
+
+    public function loadContent()
+    {
+        $this->aiChatOpen = false;
+        $this->content = $this->task->stageContents
+            ->firstWhere('stage_name', $this->activeStage)
+            ->content ?? '';
+    }
+
+    public function hasContent($stage)
+    {
+        return $this->task->stageContents->contains('stage_name', $stage);
+    }
+
+    public function canAccessStage($stage)
+    {
+        $index = array_search($stage, $this->stages);
+        if ($index === false) return false;
+
+        // Все предыдущие этапы должны быть заполнены
+        for ($i = 0; $i < $index; $i++) {
+            if (!$this->hasContent($this->stages[$i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public function save()
+    {
+        $this->validate([
+            'content' => 'nullable|string',
+        ]);
+
+        TaskStageContent::updateOrCreate(
+            ['task_id' => $this->task->id, 'stage_name' => $this->activeStage],
+            ['content' => $this->content]
+        );
+
+        $this->task = $this->task->fresh('stageContents');
+        session()->flash('saved', 'Этап сохранён.');
+
+        // Переход к следующему этапу (если есть)
+        $currentIndex = array_search($this->activeStage, $this->stages);
+        if ($currentIndex !== false && $currentIndex < count($this->stages) - 1) {
+            $nextStage = $this->stages[$currentIndex + 1];
+
+            // Проверим, можно ли перейти (все предыдущие заполнены)
+            if ($this->canAccessStage($nextStage)) {
+                $this->activeStage = $nextStage;
+                $this->loadContent();
+            }
+        }
+    }
+
+
+    public function render()
+    {
+        return view('livewire.tasks.stages');
+    }
+
+    public function canComplete()
+    {
+        foreach ($this->stages as $stage) {
+            if (!$this->hasContent($stage)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public function completeTask()
+    {
+        if (! $this->canComplete()) return;
+
+        $this->task->markAsCompleted();
+
+        session()->flash('completed', 'Задача завершена!');
+    }
+
+
+}
+
+// app/Models/AILog.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class AILog extends Model
+{
+    //
+}
+
+// app/Models/Prompt.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Prompt extends Model
+{
+    protected $fillable = [
+        'name',
+        'text',
+        'type',
+        'version',
+        'user_id',
+    ];
+}
+
+// app/Models/Series.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Series extends Model
+{
+    protected $fillable = ['name', 'description', 'series_type_id'];
+
+
+
+    public function tasks()
+    {
+        return $this->hasMany(\App\Models\Task::class);
+    }
+
+    public function seriesType()
+    {
+        return $this->belongsTo(\App\Models\SeriesType::class);
+    }
+
+
+}
+
+// app/Models/SeriesType.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class SeriesType extends Model
+{
+    protected $fillable = ['name', 'description', 'stages'];
+    protected $casts = [
+        'stages' => 'array',
+    ];
+}
+
+// app/Models/Task.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Task extends Model
+{
+    protected $fillable = [
+        'name',
+        'series_id',
+        'status',
+        'rating',
+    ];
+    public function series()
+    {
+        return $this->belongsTo(\App\Models\Series::class);
+    }
+
+    public function stageContents()
+    {
+        return $this->hasMany(\App\Models\TaskStageContent::class);
+    }
+    public function markAsCompleted()
+    {
+        $this->status = 'completed';
+        $this->save();
+
+        $this->series->update([
+            'total_tasks' => $this->series->tasks()->count(),
+            'completed_tasks' => $this->series->tasks()->where('status', 'completed')->count(),
+        ]);
+    }
+
+}
+
+// app/Models/TaskStageContent.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class TaskStageContent extends Model
+{
+    protected $fillable = [
+        'task_id',
+        'stage_name',
+        'content',
+    ];
+
+
+    public function task()
+    {
+        return $this->belongsTo(\App\Models\Task::class);
+    }
+
+}
+
+// app/Models/TaskStageMessage.php
+<?php 
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class TaskStageMessage extends Model
+{
+    protected $fillable = [
+        'task_id', 'stage_name', 'role', 'content',
+    ];
+}
+
+// app/Models/User.php
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
+
+class User extends Authenticatable
+{
+    /** @use HasFactory<\Database\Factories\UserFactory> */
+    use HasFactory, Notifiable;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var list<string>
+     */
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+        ];
+    }
+
+    /**
+     * Get the user's initials
+     */
+    public function initials(): string
+    {
+        return Str::of($this->name)
+            ->explode(' ')
+            ->map(fn (string $name) => Str::of($name)->substr(0, 1))
+            ->implode('');
+    }
+}
+
+// app/Services/OpenRouterApi.php
+<?php 
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+
+class OpenRouterApi
+{
+    protected string $baseUrl;
+    protected string $token;
+
+    public function __construct()
+    {
+        $this->baseUrl = config('services.openrouter.base_url');
+        $this->token = config('services.openrouter.token');
+    }
+
+    /**
+     * Отправить чат-запрос к OpenRouter
+     * @param string $model
+     * @param array $messages // [['role' => 'user', 'content' => '...'], ...]
+     * @return array
+     * @throws \Exception
+     */
+    public function chatCompletion(string $model, array $messages): array
+    {
+        $response = Http::baseUrl($this->baseUrl)
+            ->withToken($this->token)
+            ->acceptJson()
+            ->post('/chat/completions', [
+                'model' => $model,
+                'messages' => $messages,
+            ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('OpenRouter API error: ' . $response->body());
+        }
+
+        return $response->json();
+    }
+}
+
+// resources/views/components/layouts/app/sidebar.blade.php
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
+    <head>
+        @include('partials.head')
+    </head>
+    <body class="min-h-screen bg-white dark:bg-zinc-800">
+        <flux:sidebar sticky stashable class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:sidebar.toggle class="lg:hidden" icon="x-mark" />
+
+            <a href="{{ route('dashboard') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
+                <x-app-logo />
+            </a>
+
+            <flux:navlist variant="outline">
+                <flux:navlist.group :heading="__('Platform')" class="grid">
+                    <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>{{ __('Dashboard') }}</flux:navlist.item>
+                
+                <flux:navlist.item
+                    icon="code-bracket-square"
+                    :href="route('series-types.index')"
+                    :current="request()->routeIs('series-types.index')"
+                    wire:navigate
+                >
+                    {{ __('Типы серий') }}
+                </flux:navlist.item>
+                <flux:navlist.item
+                    icon="sparkles"
+                    :href="route('prompts.index')"
+                    :current="request()->routeIs('prompts.index')"
+                    wire:navigate
+                >
+                    {{ __('Промпты') }}
+                </flux:navlist.item>
+                </flux:navlist.group>
+                @livewire('series.list-series')
+            </flux:navlist>
+
+            <flux:spacer />
+
+            
+
+
+            <flux:navlist variant="outline">
+                <flux:navlist.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
+                {{ __('Repository') }}
+                </flux:navlist.item>
+
+                <flux:navlist.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
+                {{ __('Documentation') }}
+                </flux:navlist.item>
+            </flux:navlist>
+
+            <!-- Desktop User Menu -->
+            <flux:dropdown position="bottom" align="start">
+                <flux:profile
+                    :name="auth()->user()->name"
+                    :initials="auth()->user()->initials()"
+                    icon-trailing="chevrons-up-down"
+                />
+
+                <flux:menu class="w-[220px]">
+                    <flux:menu.radio.group>
+                        <div class="p-0 text-sm font-normal">
+                            <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
+                                <span class="relative flex h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+                                    <span
+                                        class="flex h-full w-full items-center justify-center rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white"
+                                    >
+                                        {{ auth()->user()->initials() }}
+                                    </span>
+                                </span>
+
+                                <div class="grid flex-1 text-start text-sm leading-tight">
+                                    <span class="truncate font-semibold">{{ auth()->user()->name }}</span>
+                                    <span class="truncate text-xs">{{ auth()->user()->email }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </flux:menu.radio.group>
+
+                    <flux:menu.separator />
+
+                    <flux:menu.radio.group>
+                        <flux:menu.item :href="route('settings.profile')" icon="cog" wire:navigate>{{ __('Settings') }}</flux:menu.item>
+                    </flux:menu.radio.group>
+
+                    <flux:menu.separator />
+
+                    <form method="POST" action="{{ route('logout') }}" class="w-full">
+                        @csrf
+                        <flux:menu.item as="button" type="submit" icon="arrow-right-start-on-rectangle" class="w-full">
+                            {{ __('Log Out') }}
+                        </flux:menu.item>
+                    </form>
+                </flux:menu>
+            </flux:dropdown>
+        </flux:sidebar>
+
+        <!-- Mobile User Menu -->
+        <flux:header class="lg:hidden">
+            <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
+
+            <flux:spacer />
+
+            <flux:dropdown position="top" align="end">
+                <flux:profile
+                    :initials="auth()->user()->initials()"
+                    icon-trailing="chevron-down"
+                />
+
+                <flux:menu>
+                    <flux:menu.radio.group>
+                        <div class="p-0 text-sm font-normal">
+                            <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
+                                <span class="relative flex h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+                                    <span
+                                        class="flex h-full w-full items-center justify-center rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white"
+                                    >
+                                        {{ auth()->user()->initials() }}
+                                    </span>
+                                </span>
+
+                                <div class="grid flex-1 text-start text-sm leading-tight">
+                                    <span class="truncate font-semibold">{{ auth()->user()->name }}</span>
+                                    <span class="truncate text-xs">{{ auth()->user()->email }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </flux:menu.radio.group>
+
+                    <flux:menu.separator />
+
+                    <flux:menu.radio.group>
+                        <flux:menu.item :href="route('settings.profile')" icon="cog" wire:navigate>{{ __('Settings') }}</flux:menu.item>
+                    </flux:menu.radio.group>
+
+                    <flux:menu.separator />
+
+                    <form method="POST" action="{{ route('logout') }}" class="w-full">
+                        @csrf
+                        <flux:menu.item as="button" type="submit" icon="arrow-right-start-on-rectangle" class="w-full">
+                            {{ __('Log Out') }}
+                        </flux:menu.item>
+                    </form>
+                </flux:menu>
+            </flux:dropdown>
+        </flux:header>
+
+        {{ $slot }}
+
+        @fluxScripts
+
+        <script>
+            window.addEventListener('close-series-modal', () => {
+                $flux.modal('series-modal').close();
+            });
+        </script>
+
+    </body>
+</html>
+
+// resources/views/components/layouts/app.blade.php
+<x-layouts.app.sidebar :title="$title ?? null">
+    <flux:main>
+        {{ $slot }}
+    </flux:main>
+</x-layouts.app.sidebar>
+
+// resources/views/livewire/prompts/manager.blade.php
+<div class="space-y-4">
+    <div>
+        <flux:button icon="plus" variant="primary" wire:click="create">Добавить промпт</flux:button>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <thead>
+                <tr>
+                    <th class="px-2 py-1 text-left">Название</th>
+                    <th class="px-2 py-1 text-left">Тип</th>
+                    <th class="px-2 py-1 text-left">Версия</th>
+                    <th class="px-2 py-1 text-left">Текст</th>
+                    <th class="px-2 py-1"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($prompts as $prompt)
+                    <tr>
+                        <td class="px-2 py-1 font-medium">{{ $prompt->name }}</td>
+                        <td class="px-2 py-1">{{ $prompt->type }}</td>
+                        <td class="px-2 py-1">{{ $prompt->version }}</td>
+                        <td class="px-2 py-1 text-gray-500 truncate max-w-xs" title="{{ $prompt->text }}">
+                            {{ \Illuminate\Support\Str::limit($prompt->text, 70) }}
+                        </td>
+                        <td class="px-2 py-1 flex gap-2">
+                            <flux:button icon="pencil" size="xs" variant="outline" wire:click="edit({{ $prompt->id }})">Редакт.</flux:button>
+                            <flux:button icon="trash" size="xs" variant="ghost" wire:click="delete({{ $prompt->id }})">Удалить</flux:button>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="5" class="py-3 text-center text-gray-400">Нет промптов</td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    {{-- Модалка создания/редактирования --}}
+    <flux:modal name="prompt-modal" class="md:w-96">
+        <div class="space-y-6">
+            <flux:heading size="lg">{{ $editingId ? 'Редактировать промпт' : 'Создать промпт' }}</flux:heading>
+
+            <flux:input
+                label="Название"
+                placeholder="Например: Расширь текст"
+                wire:model.defer="name"
+            />
+
+            <flux:input
+                label="Тип"
+                placeholder="Например: Статья, Видео"
+                wire:model.defer="type"
+            />
+
+            <flux:input
+                label="Версия"
+                placeholder="v1"
+                wire:model.defer="version"
+            />
+
+            <flux:textarea
+                label="Текст промпта"
+                placeholder="Сам промпт для ИИ"
+                rows="5"
+                wire:model.defer="text"
+            />
+
+            <div class="flex justify-end gap-2">
+                <flux:button variant="ghost" x-on:click="$flux.modal('prompt-modal').close()">Отмена</flux:button>
+                <flux:button variant="primary" wire:click="save">Сохранить</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+</div>
+
+// resources/views/livewire/series/list-series.blade.php
+<div class="mt-4 space-y-2">
+    <!-- Кнопка для открытия модального окна -->
+    <div class="px-3">
+        <flux:modal.trigger name="series-modal">
+            <flux:button size="sm" icon="plus" variant="outline" class="w-full justify-start">
+                Добавить серию
+            </flux:button>
+        </flux:modal.trigger>
+    </div>
+    <!-- Список -->
+    <div class="overflow-y-auto max-h-[calc(100vh-300px)] px-2">
+        @foreach ($seriesList as $series)
+            <div class="rounded-lg px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition">
+            <!-- Название как ссылка -->
+            <a
+                href="{{ route('series.show', $series->id) }}"
+                class="block text-sm font-medium text-gray-800 dark:text-gray-100 truncate"
+                wire:navigate
+            >
+                {{ $series->name }}
+            </a>
+
+            <!-- Описание -->
+            <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {{ \Illuminate\Support\Str::limit($series->description, 200) }}
+            </p>
+
+            <!-- Прогресс -->
+            @php
+                $percent = $series->total_tasks > 0
+                    ? round($series->completed_tasks / $series->total_tasks * 100)
+                    : 0;
+            @endphp
+
+            <div class="w-full mt-1 h-1.5 bg-gray-200 dark:bg-zinc-700 rounded">
+                <div
+                    class="h-1.5 bg-green-500 rounded"
+                    style="width: {{ $percent }}%;"
+                ></div>
+            </div>
+
+            <div class="flex justify-between items-center mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                <span>{{ $series->completed_tasks }} / {{ $series->total_tasks }} задач</span>
+                <span>Тип: {{ $series->seriesType->name }}</span>
+            </div>
+
+            <!-- Редактирование и удаление -->
+            <div class="flex justify-end gap-1 mt-1">
+                <flux:button
+                    type="button"
+                    wire:click="edit({{ $series->id }})"
+                    wire:loading.attr="disabled"
+                    class="text-xs text-blue-500 hover:underline"
+                >
+                    Ред.
+                </flux:button>
+                <flux:button
+                    type="button"
+                    wire:click="delete({{ $series->id }})"
+                    wire:loading.attr="disabled"
+                    class="text-xs text-red-500 hover:underline"
+                >
+                    Удалить
+                </flux:button>
+            </div>
+        </div>
+
+        @endforeach
+    </div>
+    <!-- Модальное окно для создания/редактирования серии -->
+    <flux:modal name="series-modal" class="md:w-96">
+        <div class="space-y-6">
+            <flux:heading size="lg">
+                {{ $editingId ? 'Редактировать серию' : 'Создать серию' }}
+            </flux:heading>
+
+            <flux:input
+                label="Название"
+                placeholder="Введите название серии"
+                wire:model.defer="name"
+            />
+
+            <flux:textarea
+                label="Описание"
+                placeholder="Введите описание серии"
+                wire:model.defer="description"
+            />
+
+            <flux:select
+                label="Тип серии"
+                wire:model.defer="series_type_id"
+            >
+                @foreach ($types as $type)
+                    <option value="{{ $type->id }}">{{ $type->name }}</option>
+                @endforeach
+            </flux:select>
+
+            <div class="flex justify-end gap-2">
+                <flux:button variant="ghost" x-on:click="$flux.modal('series-modal').close()">Отмена</flux:button>
+                <flux:button variant="primary" wire:click="save">Сохранить</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+
+</div>
+
+// resources/views/livewire/tasks/task-list.blade.php
+<div class="space-y-2">
+    @forelse ($tasks as $task)
+        @php
+            $statusColors = [
+                'draft' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                'in_progress' => 'bg-blue-100 text-blue-800 border-blue-300',
+                'completed' => 'bg-gray-100 text-gray-600 border-gray-300'
+            ];
+            $cardBg = $task->status === 'completed' ? 'bg-gray-50 dark:bg-zinc-800 opacity-80' : 'bg-white dark:bg-zinc-900';
+            $rating = $task->rating ?? 0;
+        @endphp
+
+        <div class="border rounded p-3 {{ $cardBg }} flex justify-between items-center group transition">
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                    {{-- Название задачи --}}
+                    <a
+                        href="{{ route('tasks.show', $task->id) }}"
+                        class="font-semibold text-gray-800 dark:text-white hover:underline"
+                        wire:navigate
+                        title="Открыть задачу"
+                    >
+                        {{ $task->name }}
+                    </a>
+                    {{-- Статус --}}
+                    <span class="px-2 py-0.5 rounded text-xs border {{ $statusColors[$task->status] ?? '' }}">
+                        @if ($task->status === 'draft')
+                            Черновик
+                        @elseif ($task->status === 'in_progress')
+                            В работе
+                        @elseif ($task->status === 'completed')
+                            Завершено
+                        @endif
+                    </span>
+                </div>
+                {{-- Рейтинг (звездочки) --}}
+                <div class="flex items-center gap-1 mt-1">
+                    @for ($i = 1; $i <= 10; $i++)
+                        
+                            <flux:button
+                                wire:click="setRating({{ $task->id }}, {{ $i }})"
+                                icon="star"
+                                size="xs"
+                                variant="{{ $i <= $rating ? 'danger' : 'filled' }}"
+                                class="!rounded-full !px-0 !py-0 !h-4 !w-4 focus:outline-none cursor-pointer {{ $i <= $rating ? '!bg-red-400' : 'filled' }}"
+                                title="Поставить рейтинг {{ $i }}"
+                            />
+                        </button>
+                    @endfor
+                </div>
+            </div>
+            {{-- Кнопки управления --}}
+            <div class="flex gap-2 shrink-0">
+                <flux:modal.trigger name="edit-task">
+                    <flux:button
+                        type="button"
+                        wire:click.stop="openEditModal({{ $task->id }})"
+                        class="text-xs text-blue-500 hover:underline"
+                        title="Редактировать"
+                    >
+                        Редактировать
+                    </flux:button>
+                </flux:modal.trigger>
+                <flux:button
+                    type="button"
+                    wire:click.stop="deleteTask({{ $task->id }})"
+                    class="text-xs text-red-500 hover:underline"
+                    onclick="return confirm('Удалить задачу?')"
+                    title="Удалить"
+                >
+                    Удалить
+                </flux:button>
+            </div>
+        </div>
+    @empty
+        <p class="text-sm text-gray-400">Задач пока нет.</p>
+    @endforelse
+
+    {{-- Flux-модалка для редактирования --}}
+    <flux:modal name="edit-task" class="md:w-96">
+        <div class="space-y-6">
+            <flux:heading size="lg">Редактировать задачу</flux:heading>
+            <flux:input
+                label="Название задачи"
+                placeholder="Введите новое название"
+                wire:model.defer="editingTaskName"
+            />
+            <div class="flex">
+                <flux:spacer />
+                <flux:button type="button" variant="ghost" x-on:click="$flux.modal('edit-task').close()">Отмена</flux:button>
+                <flux:button type="button" variant="primary" wire:click="saveEdit">Сохранить</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+</div>
+
+// resources/views/livewire/tasks/create.blade.php
+<div>
+    <flux:modal.trigger name="create-task">
+        <flux:button size="sm" icon="plus" variant="primary">
+            Добавить задачу
+        </flux:button>
+    </flux:modal.trigger>
+
+    <flux:modal name="create-task" class="md:w-96">
+        <div class="space-y-4">
+            <flux:heading size="md">Новая задача</flux:heading>
+
+            <flux:input
+                label="Название задачи"
+                placeholder="Например: Заголовок статьи"
+                wire:model.defer="name"
+            />
+
+            <div class="flex justify-end gap-2">
+                <flux:button variant="ghost" x-on:click="$flux.modal('create-task').close()">Отмена</flux:button>
+                <flux:button variant="primary" wire:click="save">Сохранить</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+</div>
+
+// resources/views/livewire/tasks/stages.blade.php
+<div class="space-y-4">
+
+    @php
+    $parsedown = new \Parsedown();
+    @endphp
+    <!-- Табы -->
+    <div class="flex gap-2 overflow-x-auto">
+        @foreach ($stages as $stage)
+            @php
+                $done = $has = $task->stageContents->contains('stage_name', $stage);
+                $can = $this->canAccessStage($stage);
+            @endphp
+            <flux:button wire:click="$set('activeStage', '{{ $stage }}')" class="px-3 py-1 rounded border text-sm
+                    {{ $activeStage === $stage ? 'bg-blue-500 text-white' : ($done ? 'bg-green-100' : 'bg-gray-100') }}
+                    {{ !$can ? 'opacity-50 cursor-not-allowed' : '' }}" :disabled="!$can"
+                 >
+                {{ $stage }}
+                @if($done)
+                    ✔
+                @endif
+            </flux:button>
+
+        @endforeach
+    </div>
+
+    <!-- Поле ввода -->
+    <div>
+        <label class="block mb-1 text-sm font-medium text-gray-700">
+            Содержимое этапа: {{ $activeStage }}
+        </label>
+        <flux:textarea wire:model.defer="content" rows="10" class="w-full textarea textarea-bordered" />
+    </div>
+
+    @if (session()->has('saved'))
+        <div class="text-green-600 text-sm">{{ session('saved') }}</div>
+    @endif
+
+    <flux:button wire:click="save">Сохранить этап</flux:button>
+
+    @if ($this->canComplete())
+        <flux:button variant="primary" wire:click="completeTask">
+            Завершить задачу
+        </flux:button>
+    @endif
+
+    @if (session()->has('completed'))
+        <div class="text-green-600 text-sm">{{ session('completed') }}</div>
+    @endif
+
+        <!-- Только для этапов НЕ первый и НЕ последний -->
+    @if (array_search($activeStage, $stages) !== 0 && array_search($activeStage, $stages) !== count($stages) - 1)
+        <div x-data="{ open: false}">
+            <div>
+            <flux:button class="text-blue-600 underline text-sm btn" @click="open = !open" type="button" wire:click="openAiChat">
+                <span x-text="open ? 'Скрыть' : 'Показать'"></span> запросы к ИИ
+            </flux:button>
+            </div>
+
+
+            <div class="mt-4">
+
+                <div x-show="open" x-transition class="border rounded mt-2 p-3 bg-zinc-50 dark:bg-zinc-800">
+                        {{-- Лоадер --}}
+                        @if($aiLoading)
+                            <div class="flex items-center gap-2 text-blue-600 mb-2">
+                                <svg class="animate-spin h-5 w-5" .../> <span>Запрос обрабатывается...</span>
+                            </div>
+                        @endif
+
+                        {{-- Ошибка --}}
+                        @if($aiError)
+                            <div class="text-red-600 text-sm mb-2">{{ $aiError }}</div>
+                        @endif
+
+                    @if($showSetupForm)    
+                            <div>
+                                <div class="mb-2 font-semibold text-sm">Первый запрос к ИИ</div>
+                                <div class="grid gap-2">
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <flux:field >
+                                            <flux:label>Модель</flux:label>
+                                            <flux:input type="text" class="input input-bordered" wire:model.defer="modelName" />
+                                        </flux:field >
+                                        
+                                        <flux:field >
+                                            <flux:label>Промпт</flux:label>
+                                            <flux:select  placeholder="Промпт" wire:model.defer="selectedPromptId">
+                                                @foreach($prompts as $prompt)
+                                                    <flux:select.option value="{{ $prompt->id }}">{{ $prompt->name }}</flux:select.option>
+                                                @endforeach
+                                            </flux:select>
+                                        </flux:field>
+                                    </div>
+                                    <flux:field variant="inline">
+                                        <flux:checkbox wire:model.defer="useSeriesDescription" />
+                                        <flux:label>Включить описание серии</flux:label>
+                                    </flux:field>
+
+                                    <flux:field >
+                                        <flux:label>Сообщение</flux:label>
+                                        <flux:textarea class="textarea textarea-bordered" wire:model.defer="chatInput" />
+                                    </flux:field >
+                                    <flux:button 
+                                        class="btn btn-primary mt-2"
+                                        wire:click="sendFirstAiRequest"
+                                    >Отправить</flux:button>
+                                </div>
+                            </div>
+                    @endif
+                    @if(!$showSetupForm) 
+                        <div>
+                            <div class="mb-2 font-semibold text-sm">Чат с ИИ</div>
+                            <div class="h-auto overflow-y-auto border rounded mb-2 bg-white dark:bg-zinc-900 p-2 space-y-2" id="ai-history-{{ $activeStage }}">
+                                @foreach($chatMessages as $msg)
+                                    <div class="flex {{ $msg['role'] === 'user' ? 'justify-end' : 'justify-start' }}">
+                                        <div class="
+                                            max-w-[80%] px-3 py-2 rounded-lg mb-1
+                                            {{ $msg['role']=='user' ? 'bg-blue-100 dark:bg-blue-900' : ($msg['role']=='assistant' ? 'bg-gray-100 dark:bg-gray-800' : 'bg-yellow-50') }}
+                                            text-sm shadow
+                                        ">
+                                            <div class="font-semibold text-xs mb-1 opacity-70">
+                                                @if($msg['role']=='system') Система @elseif($msg['role']=='assistant') 🤖 AI @else Вы @endif
+                                            </div>
+                                            <div class="prose prose-sm dark:prose-invert break-words">
+                                                {!! $parsedown->text($msg['content']) !!}
+                                            </div>
+                                        </div>
+                                        
+                                    </div>
+                                    @if($loop->last && $msg['role'] === 'assistant')
+                                            <div class="flex justify-end mt-2">
+                                                <flux:button
+                                                    
+                                                    class="btn btn-outline btn-xs"
+                                                    wire:click="takeLastAiAnswer"
+                                                >
+                                                    Взять ответ
+                                                </flux:button>
+                                            </div>
+                                        @endif
+                                @endforeach
+                                
+                            </div>
+                            <div class="flex gap-2">
+                                <flux:textarea class="textarea textarea-bordered flex-1" wire:model.defer="chatInput" rows="2" />
+                                <flux:button type="button" class="btn btn-primary" wire:click="sendAiChatMessage">Отправить</flux:button>
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
+    @endif
+    <script>
+    document.addEventListener("livewire:navigated", () => {
+        const el = document.getElementById("ai-history-{{ $activeStage }}");
+        if (el) el.scrollTop = el.scrollHeight;
+    });
+    // Для Livewire v3:
+    window.addEventListener('ai-history-scroll', () => {
+        const el = document.getElementById("ai-history-{{ $activeStage }}");
+        if (el) el.scrollTop = el.scrollHeight;
+    });
+    </script>
+</div>
+
+// resources/views/prompts/index.blade.php
+<x-layouts.app title="Мои промпты">
+    <div class="p-4 space-y-6">
+        <h1 class="text-2xl font-bold mb-2">Мои промпты</h1>
+        <livewire:prompts.manager />
+    </div>
+</x-layouts.app>
+
+// resources/views/series/show.blade.php
+<x-layouts.app :title="$series->name">
+    <div class="p-4 space-y-6">
+        <div>
+            <h1 class="text-2xl font-bold">{{ $series->name }}</h1>
+            <p class="text-gray-600">{{ $series->description }}</p>
+            <p class="text-sm text-gray-400 mt-1">Тип серии: {{ $series->seriesType->name }}</p>
+        </div>
+
+        <div class="flex justify-between items-center">
+            <h2 class="text-lg font-semibold">Задачи</h2>
+            <livewire:tasks.create :series-id="$series->id" />
+                
+
+        </div>
+
+        <div class="space-y-2">
+            <livewire:tasks.task-list :series="$series" />
+        </div>
+    </div>
+</x-layouts.app>
+
+// resources/views/tasks/show.blade.php
+<x-layouts.app :title="$task->name">
+    <div class="p-4 space-y-6">
+        <h1 class="text-2xl font-bold">{{ $task->name }}</h1>
+        <p class="text-sm text-gray-600">Серия: {{ $task->series->name }}</p>
+
+        <livewire:tasks.stages :task="$task" />
+    </div>
+
+</x-layouts.app>
+

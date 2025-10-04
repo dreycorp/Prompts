@@ -1,0 +1,1989 @@
+```markdown
+# Техническое задание: Система терапевтических сессий с ИИ
+
+## 1. Введение
+**Цель**: Разработка платформы для проведения структурированных психологических сессий с использованием ИИ через OpenRouter API.
+
+## 2. Обзор системы
+- **Стек**: Laravel 11, Livewire 3, Tailwind CSS, Flux UI, MySQL 8.0
+- **Ядро**: Пошаговое прохождение терапевтических сценариев с ветвлениями
+- **Интеграция**: OpenRouter API для взаимодействия с ИИ-моделями
+- **Пользователи**: Клиенты, терапевты, администраторы
+
+## 3. Требования к системе
+
+### 3.1. Функциональные требования
+#### Пользователи и аутентификация
+- Регистрация через email/пароль + OAuth (Google, Facebook)
+- Система ролей:
+  - `client`: Прохождение сессий, история, ЛК
+  - `therapist`: Просмотр сессий клиентов
+  - `admin`: Полное управление системой
+- Восстановление пароля
+
+#### Управление терапевтическими типами (Админ-панель)
+- CRUD для типов сеансов:
+  - Название, описание, картинка
+  - Системный промпт (роль ИИ)
+- Drag-and-drop конструктор шагов:
+  ```json
+  {
+    "id": "step_1",
+    "type": "question", // или "ai"
+    "prompt": "Как вас зовут?",
+    "ai_instructions": "Соберите информацию...",
+    "transition_rules": {
+      "default_next": "step_2",
+      "conditions": [
+        {"if": "answer == 'нет'", "then": "step_5"}
+      ]
+    }
+  }
+  ```
+
+#### Механика сессий
+1. **Старт сессии**:
+   - Инициализация `therapy_sessions` и `session_steps`
+   - Отправка системного промпта (роль) для шагов типа AI
+2. **Обработка шагов**:
+   - При начале шага (`is_step_start=true`):
+     - Добавление инструкций шага к сообщению
+     - Сброс флага после первого ответа
+   - Формат ответа ИИ:
+     ```json
+     {
+       "user_message": "Видимый текст",
+       "system_commands": {
+         "next_step": "step_3",
+         "is_completed": true
+       }
+     }
+     ```
+3. **Переходы между шагами**:
+   - Только по команде ИИ
+   - Валидация существования шага
+   - Игнорирование невалидных команд
+4. **Продолжение сессии**:
+   - Восстановление контекста из истории
+   - Автоматическое определение текущего шага
+
+#### Личный кабинет клиента
+- Список сессий:
+  | Дата       | Тип сеанса | Статус     | Прогресс |
+  |------------|------------|------------|----------|
+  | 2025-06-24 | Стресс     | Активна    | 40%      |
+  | 2025-06-20 | Тревога    | Завершена  | 100%     |
+- Действия:
+  - Продолжить активную сессию
+  - Просмотр истории сообщений (только видимые)
+
+#### История и данные
+- **Полное хранение**:
+  - Все сообщения (системные, ИИ, пользователь)
+  - Флаг видимости (`visible=true/false`)
+  - Технические команды ИИ
+- **Структура БД**:
+  ```mermaid
+  erDiagram
+    users ||--o{ therapy_sessions : has
+    therapy_types ||--o{ therapy_sessions : has
+    therapy_types ||--o{ therapy_steps : contains
+    therapy_sessions ||--o{ session_steps : has
+    therapy_sessions ||--o{ session_messages : has
+  ```
+
+### 3.2. Нефункциональные требования
+- **Производительность**:
+  - Кеширование конфигов сессий
+  - Очередь запросов к OpenRouter
+  - Лимит: 50 одновременных сессий/сервер
+- **Безопасность**:
+  - RBAC (ролевая модель)
+  - Валидация всех входных данных
+  - Шифрование персональных данных
+- **Надежность**:
+  - 2 попытки обработки ответа ИИ
+  - Резервные модели:
+    ```php
+    $models = [
+        'primary' => 'gpt-4-turbo',
+        'fallback1' => 'claude-3-opus',
+        'fallback2' => 'llama3-70b'
+    ];
+    ```
+- **Логирование**:
+  - Ошибки интеграции с OpenRouter
+  - Действия администраторов
+
+## 4. Примерная Техническая реализация
+
+### 4.1. Архитектура
+**Sequence Diagram**:
+```mermaid
+sequenceDiagram
+    actor User
+    participant System
+    participant DB
+    participant OpenRouter
+    
+    User->>System: Start session
+    System->>DB: Create session/step
+    alt Step type=AI
+        System->>OpenRouter: Send system prompt
+        OpenRouter-->>System: AI response
+        System->>DB: Save (visible=false)
+    end
+    System->>User: Show message
+    
+    loop Session loop
+        User->>System: Send reply
+        System->>DB: Save message
+        alt Is step start
+            System->>System: Add step instructions
+        end
+        System->>OpenRouter: Send full history
+        OpenRouter-->>System: JSON response
+        System->>System: Parse response
+        alt Has next_step command
+            System->>DB: Update step
+        end
+        System->>User: Show user_message
+    end
+```
+
+### 4.2. Модули системы
+#### Модуль сессий
+```php
+class SessionService
+{
+    public function processStep(Session $session, string $userInput): string
+    {
+        // Сохраняем сообщение пользователя
+        $this->saveMessage($session->id, 'user', $userInput, true);
+        
+        // Формируем историю с учетом контекста
+        $messages = $this->buildMessageHistory($session, $userInput);
+        
+        // Отправка в OpenRouter (с резервными моделями)
+        $aiResponse = $this->getAiResponse($messages);
+        
+        // Парсинг ответа
+        $parsed = $this->parseAiResponse($aiResponse);
+        
+        // Сохранение ответа ИИ
+        $this->saveMessage($session->id, 'assistant', $parsed['user_message'], true);
+        $this->saveMessage($session->id, 'system', json_encode($parsed['system_commands']), false);
+        
+        // Обработка перехода
+        if ($nextStep = $parsed['system_commands']['next_step'] ?? null) {
+            $this->transitionToStep($session, $nextStep);
+        }
+        
+        return $parsed['user_message'];
+    }
+}
+```
+
+### 4.3. Интеграция с OpenRouter
+**Формат запроса**:
+```php
+$response = Http::withHeaders([
+    'Authorization' => 'Bearer '.config('openrouter.key'),
+    'HTTP-Referer' => config('app.url')
+])->post('https://openrouter.ai/api/v1/chat/completions', [
+    'model' => 'gpt-4-turbo',
+    'messages' => $history,
+    'response_format' => ['type' => 'json_object'],
+]);
+```
+
+**Требования к ответу**:
+- Обязательный JSON-формат
+- Поле `user_message` для отображения клиенту
+- Поле `system_commands` для управления сессией
+
+### 4.4. База данных
+
+**Таблица `therapy_sessions`**:
+| Поле               | Тип         | Описание                     |
+|--------------------|-------------|------------------------------|
+| id                 | BIGINT (PK) | ID сессии                    |
+| user_id            | BIGINT (FK) | ID пользователя              |
+| therapy_type_id    | BIGINT (FK) | Тип сеанса                   |
+| status             | ENUM        | active/paused/completed      |
+| started_at         | DATETIME    | Время начала                 |
+| finished_at        | DATETIME    | Время завершения             |
+
+**Таблица `session_steps`**:
+| Поле               | Тип         | Описание                     |
+|--------------------|-------------|------------------------------|
+| id                 | BIGINT (PK) | ID записи                    |
+| session_id         | BIGINT (FK) | ID сессии                    |
+| step_id            | VARCHAR     | ID шага из конфига           |
+| is_step_start      | BOOLEAN     | Флаг начала шага             |
+| entered_at         | DATETIME    | Время перехода               |
+
+**Таблица `session_messages`**:
+| Поле               | Тип         | Описание                     |
+|--------------------|-------------|------------------------------|
+| id                 | BIGINT (PK) | ID сообщения                 |
+| session_id         | BIGINT (FK) | ID сессии                    |
+| role               | ENUM        | system/user/assistant        |
+| content            | TEXT        | Текст сообщения              |
+| visible            | BOOLEAN     | Видимость для клиента        |
+| created_at         | DATETIME    | Время создания               |
+
+### Полное словесное описание системы
+
+#### 1. Общая концепция системы
+Система представляет собой платформу для проведения структурированных терапевтических сессий с использованием искусственного интеллекта. Пользователи проходят через последовательность шагов, взаимодействуя с ИИ-ассистентом, который выступает в роли терапевта. Каждая сессия имеет определенный сценарий (тип), который определяет последовательность шагов и логику ветвления. Система интегрируется с API OpenRouter для генерации персонализированных ответов ИИ.
+
+#### 2. Логика работы пользователя
+
+**2.1. Начало работы:**
+- Пользователь регистрируется через email/пароль или социальные сети
+- После входа видит в личном кабинете:
+  - Каталог доступных терапевтических программ (с картинками и описанием)
+  - Свои активные и завершенные сессии
+- Для запуска новой сессии:
+  1. Выбирает тип терапии из каталога
+  2. Нажимает "Начать сессию"
+  3. Система создает новую запись сессии и определяет первый шаг
+
+**2.2. Прохождение сессии:**
+- Открывается интерфейс чата, где:
+  - Видны только сообщения пользователя и содержательные ответы ИИ
+  - Системные инструкции и технические детали скрыты
+- Пример диалога:
+  ```
+  [Система]: Привет! Как тебя зовут?
+  [Пользователь]: Меня зовут Анна
+  [ИИ-терапевт]: Приятно познакомиться, Анна. Расскажи, что привело тебя сегодня?
+  ```
+- На каждом шаге:
+  - Пользователь получает вопрос или реплику от ИИ
+  - Отвечает в текстовом поле
+  - Система обрабатывает ответ и определяет следующий шаг
+
+**2.3. Завершение сессии:**
+- Сессия автоматически завершается, когда:
+  - ИИ отправляет флаг завершения (is_completed=true)
+  - Пользователь достигает последнего шага сценария
+- После завершения:
+  - Сессия перемещается в раздел "История"
+  - Пользователь может просмотреть полную переписку
+
+**2.4. Продолжение сессии:**
+- В личном кабинете:
+  - Незавершенные сессии помечены как "Активные"
+  - Напротив каждой - кнопка "Продолжить"
+- При продолжении:
+  - Восстанавливается последний шаг
+  - Загружается вся история переписки
+  - Пользователь продолжает с момента последнего взаимодействия
+
+#### 3. Логика работы шагов
+
+**3.1. Структура шага:**
+Каждый шаг в системе имеет:
+- Уникальный идентификатор (например: "intro_step")
+- Тип: "question" (вопрос пользователю) или "ai" (взаимодействие с ИИ)
+- Инструкции для ИИ (для шагов типа "ai")
+- Правила перехода к следующим шагам
+
+**3.2. Жизненный цикл шага:**
+
+**Этап 1: Инициализация шага**
+- При старте сессии или переходе с предыдущего шага:
+  - Система загружает конфигурацию шага из БД
+  - Устанавливает флаг "начало шага" (is_step_start=true)
+  - Для шагов типа "ai":
+    - Добавляет системный промпт (роль ИИ) в историю
+    - Отправляет первый запрос к ИИ
+    - Полученный ответ показывается пользователю
+
+**Этап 2: Взаимодействие в рамках шага**
+- Первое сообщение пользователя в шаге:
+  - Система добавляет инструкции текущего шага к сообщению
+  - Отправляет объединенные данные в OpenRouter
+  - Сбрасывает флаг "начало шага" (is_step_start=false)
+- Последующие сообщения в том же шаге:
+  - Отправляются напрямую без дополнительных инструкций
+  - История диалога автоматически дополняется
+
+**Этап 3: Обработка ответа ИИ**
+1. Система получает JSON-ответ от OpenRouter:
+   ```json
+   {
+     "user_message": "Текст для показа пользователю",
+     "system_commands": {
+       "next_step": "step_5",
+       "is_completed": false
+     }
+   }
+   ```
+2. Действия системы:
+   - Сохраняет user_message (видимое для пользователя)
+   - Сохраняет system_commands (скрытое техническое сообщение)
+   - Показывает user_message пользователю
+   - Если указан next_step:
+     - Проверяет существование шага
+     - Инициирует переход на новый шаг
+     - Устанавливает флаг "начало шага" для нового шага
+
+**Этап 4: Переход между шагами**
+- Переход инициируется только командой ИИ (system_commands.next_step)
+- При переходе:
+  - Текущий шаг помечается как завершенный
+  - Новый шаг инициализируется с is_step_start=true
+  - Первым сообщением в новом шаге показывается user_message от ИИ
+
+**3.3. Особые случаи:**
+- **Ветвление сценария:** 
+  - В шагах типа "question" переход определяется сразу по ответу пользователя
+  - В шагах типа "ai" - по команде ИИ в system_commands
+- **Обработка ошибок:**
+  - При некорректном ответе ИИ: 2 повторных запроса
+  - При повторной ошибке: переход на резервную модель ИИ
+  - При невалидном next_step: команда игнорируется
+- **Возврат на предыдущие шаги:** 
+  - Возможен только по явной команде ИИ в system_commands
+
+#### 4. Техническая логика работы
+
+**4.1. Последовательность операций:**
+1. Старт сессии:
+   - Создание therapy_session
+   - Инициализация первого session_step с is_step_start=true
+   - Отправка системного промпта (для шагов AI)
+
+2. Обработка сообщения пользователя:
+   - Сохранение сообщения в session_messages
+   - Проверка is_step_start:
+     - Если true: добавление инструкций шага
+     - Сброс флага is_step_start
+   - Формирование полного запроса к ИИ
+
+3. Взаимодействие с OpenRouter:
+   - Отправка истории диалога
+   - Получение и парсинг JSON-ответа
+   - Обработка ошибок (до 2 повторов)
+
+4. Реакция на ответ ИИ:
+   - Сохранение видимой и скрытой частей ответа
+   - Обработка команд перехода (next_step)
+   - Обновление состояния сессии
+
+5. Завершение:
+   - При is_completed=true: пометка сессии как завершенной
+   - Автоматическое сохранение истории
+
+**4.2. Ключевые состояния:**
+- **Начало шага (is_step_start=true):**
+  - Добавление инструкций к первому сообщению пользователя
+  - Для AI-шагов: отправка системного промпта
+  - Активируется при старте сессии или переходе по next_step
+  
+- **Продолжение шага (is_step_start=false):**
+  - Обычный режим диалога
+  - Инструкции не добавляются
+  - История диалога передается полностью
+
+- **Переход между шагами:**
+  - Инициируется только командой ИИ
+  - Включает:
+    - Закрытие текущего шага
+    - Инициализацию нового шага
+    - Обновление прогресса сессии
+
+#### 5. Административный контроль
+- **Создание сценариев:**
+  - Drag-and-drop конструктор шагов
+  - Настройка:
+    - Типа шага (question/ai)
+    - Текста вопроса/инструкций
+    - Правил перехода
+    - Системного промпта для роли ИИ
+    
+- **Мониторинг сессий:**
+  - Просмотр всех сообщений (включая скрытые)
+  - Фильтрация по пользователям, дате, статусу
+  - Возможность принудительного завершения сессий
+
+- **Управление моделями ИИ:**
+  - Настройка приоритетных моделей
+  - Просмотр статистики ошибок
+  - Лимиты запросов
+
+#### 6. Особенности работы с ИИ
+- **Формирование контекста:**
+  - При начале шага: системный промпт + инструкции шага
+  - При продолжении: полная история диалога
+  - Специальные плейсхолдеры ({user_name}, {step_id})
+  
+- **Требования к ответу ИИ:**
+  - Строгий JSON-формат
+  - Обязательные поля:
+    - user_message (текст для пользователя)
+    - system_commands (управляющие команды)
+  - Рекомендуемые поля:
+    - next_step (для перехода)
+    - is_completed (флаг завершения)
+
+- **Стратегия восстановления:**
+  - При ошибке парсинга: повтор запроса с историей
+  - При повторной ошибке: 
+    - Переключение на резервную модель
+    - Уведомление администратора
+
+# пояснений к формату
+
+Создание стандартизированного формата для взаимодействия с ИИ - это ключевой шаг для обеспечения стабильности и расширяемости системы. Давайте разработаем формат и учтем все ваши замечания.
+
+### Предложенный формат для взаимодействия с ИИ
+
+#### 1. Формат системного промпта
+
+Системный промпт будет содержать инструкции для ИИ о его роли и форматах, которые он должен соблюдать:
+
+```plaintext
+Ты - психотерапевт и ведешь сессию с клиентом.
+Твой ответ всегда должен содержать сообщение для пользователя и, если необходимо, системные инструкции.
+
+Формат ответа:
+{
+    "user_message": "Текст для пользователя",
+    "system_commands": {
+        "next_step": "step_2",
+        "is_completed": false
+    },
+    "collected_data": {
+        "user_name": "Анна"
+    }
+}
+
+Собранные данные от пользователя на каждом шаге присылай в виде ключа и значения.
+
+На каждом шаге я буду давать информацию о том, куда можно переходить, в формате:
+{
+    "available_steps": ["step_1", "step_2"]
+}
+
+Убедись, что ответ всегда в формате JSON и векстовых полях используй только одинарные кавычки (').
+```
+
+#### 2. Формат инструкций для каждого шага
+
+Каждый шаг будет содержать конкретные инструкции для ИИ:
+
+```plaintext
+Поприветствуй пользователя и спроси, как его зовут.
+
+Когда получишь данные, можешь переходить на следующий шаги.
+
+Доступные шаги:
+{
+    "default_next": "step_2",
+    "conditions": [
+        {"if": "user_name == 'нет'", "then": "step_3"}
+    ]
+}
+```
+
+### Реализация в коде
+
+1. **Хранение данных сессии:**
+   - Все сообщения и собранные данные должны храниться в базе данных. Для этого мы используем таблицы сообщений `session_messages` и, при необходимости, добавим еще одну таблицу для собираемых данных.
+
+2. **Обработка неверного формата:**
+   - Создадим метод `normalizeResponseFormat`, который будет пытаться привести ответ к нужному формату.
+   - Если после попытки нормализации формат все еще неверный, делаем повторный запрос к ИИ. Если ошибка повторяется, выводим сообщение пользователю.
+
+3. **Передача JSON-данных:**
+   - Используйте функции для безопасного сериализации и десериализации JSON, чтобы избежать проблем с кавычками. Например, `json_encode` и `json_decode` в PHP.
+
+
+# Уже созданный код
+// routes/web.php
+<?php
+
+use App\Livewire\Settings\Profile;
+use App\Livewire\Settings\Password;
+use App\Livewire\Settings\Appearance;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Admin\TherapyStepController;
+use App\Http\Controllers\Admin\TherapyTypeController;
+use App\Http\Controllers\Client\TherapySessionController;
+
+Route::get('/', function () {
+    return view('welcome');
+})->name('home');
+
+Route::view('dashboard', 'dashboard')
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
+
+Route::middleware(['auth'])->group(function () {
+    Route::redirect('settings', 'settings/profile');
+
+    Route::get('settings/profile', Profile::class)->name('settings.profile');
+    Route::get('settings/password', Password::class)->name('settings.password');
+    Route::get('settings/appearance', Appearance::class)->name('settings.appearance');
+});
+
+Route::prefix('admin')->middleware(['auth'])->group(function () {
+    Route::resource('therapy-types', TherapyTypeController::class);
+    Route::resource('therapy-types.steps', TherapyStepController::class);
+});
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/sessions', [TherapySessionController::class, 'index'])->name('sessions.index');
+    Route::get('/sessions/create/{therapyType}', [TherapySessionController::class, 'create'])->name('sessions.create');
+    Route::get('/sessions/{session}', [TherapySessionController::class, 'show'])->name('sessions.show');
+    Route::post('/sessions/{session}/send', [TherapySessionController::class, 'send'])->name('sessions.send');
+});
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/therapy-types', [App\Http\Controllers\Client\TherapyTypeController::class, 'index'])->name('therapy-types.list');
+});
+
+require __DIR__.'/auth.php';
+
+// app/Http/Controllers/Admin/TherapyStepController.php
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Models\TherapyStep;
+use App\Models\TherapyType;
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+
+class TherapyStepController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     */
+    public function index(TherapyType $therapyType)
+    {
+        $steps = $therapyType->steps()->orderBy('id')->get();
+        return view('admin.therapy-steps.index', compact('therapyType', 'steps'));
+    }
+
+    public function create(TherapyType $therapyType)
+    {
+        return view('admin.therapy-steps.create', compact('therapyType'));
+    }
+
+    public function store(Request $request, TherapyType $therapyType)
+    {
+        $data = $request->validate([
+            'step_id' => 'required|string',
+            'type' => 'required|in:question,ai',
+            'prompt' => 'nullable|string',
+            'ai_instructions' => 'nullable|string',
+            //'transition_rules' => 'nullable|json',
+        ]);
+
+        $rules = $request->input('transition_rules');
+        if ($rules) {
+            $decoded = json_decode($rules, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return back()
+                    ->withErrors(['transition_rules' => 'Невалидный JSON в правилах перехода'])
+                    ->withInput();
+            }
+            $data['transition_rules'] = $decoded;
+        } else {
+            $data['transition_rules'] = null;
+        }
+
+        $therapyType->steps()->create($data);
+
+        return redirect()->route('therapy-types.steps.index', $therapyType)->with('success', 'Шаг добавлен');
+    }
+
+
+    /**
+     * Display the specified resource.
+     */
+    public function show(string $id)
+    {
+        //
+    }
+
+    public function edit(TherapyType $therapyType, TherapyStep $step)
+    {
+        return view('admin.therapy-steps.edit', [
+            'therapyType' => $therapyType,
+            'therapyStep' => $step,   // для Blade оставляем то же имя
+        ]);
+    }
+
+    public function update(Request $request, TherapyType $therapyType, TherapyStep $step)
+    {
+        $data = $request->validate([
+            'step_id' => 'required|string',
+            'type' => 'required|in:question,ai',
+            'prompt' => 'nullable|string',
+            'ai_instructions' => 'nullable|string',
+            //'transition_rules' => 'nullable|json',
+        ]);
+        $rules = $request->input('transition_rules');
+        if ($rules) {
+            $decoded = json_decode($rules, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return back()
+                    ->withErrors(['transition_rules' => 'Невалидный JSON в правилах перехода'])
+                    ->withInput();
+            }
+            $data['transition_rules'] = $decoded;
+        } else {
+            $data['transition_rules'] = null;
+        }
+        
+        $step->update($data);
+
+        return redirect()->route('therapy-types.steps.index', $therapyType)->with('success', 'Шаг обновлен');
+    }
+
+    public function destroy(TherapyType $therapyType, TherapyStep $step)
+    {
+        $step->delete();
+
+        return redirect()->route('therapy-types.steps.index', $therapyType)->with('success', 'Шаг удален');
+    }
+}
+
+// app/Http/Controllers/Admin/TherapyTypeController.php
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Models\TherapyType;
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+
+class TherapyTypeController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     */
+    public function index()
+    {
+        $types = TherapyType::latest()->paginate(10);
+        return view('admin.therapy-types.index', compact('types'));
+    }
+
+    public function create()
+    {
+        return view('admin.therapy-types.create');
+    }
+
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'system_prompt' => 'nullable|string',
+        ]);
+
+        TherapyType::create($data);
+
+        return redirect()->route('therapy-types.index')->with('success', 'Тип добавлен');
+    }
+
+    /**
+     * Display the specified resource.
+     */
+    public function show(string $id)
+    {
+        //
+    }
+
+    public function edit(TherapyType $therapyType)
+    {
+        return view('admin.therapy-types.edit', compact('therapyType'));
+    }
+
+    public function update(Request $request, TherapyType $therapyType)
+    {
+        $data = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'system_prompt' => 'nullable|string',
+        ]);
+
+        $therapyType->update($data);
+
+        return redirect()->route('therapy-types.index')->with('success', 'Тип обновлен');
+    }
+
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(TherapyType $therapyType)
+    {
+        $therapyType->delete();
+
+        return redirect()->route('therapy-types.index')->with('success', 'Тип удален');
+    }
+}
+
+// app/Http/Controllers/Client/TherapyTypeController.php
+<?php
+
+namespace App\Http\Controllers\Client;
+
+use App\Models\TherapyType;
+use App\Http\Controllers\Controller;
+
+class TherapyTypeController extends Controller
+{
+    /**
+     * Display a listing of the therapy types.
+     */
+    public function index()
+    {
+        $types = TherapyType::all();
+        return view('client.therapy-types.index', compact('types'));
+    }
+}
+
+// app/Http/Controllers/Client/TherapySessionController.php
+<?php
+
+namespace App\Http\Controllers\Client;
+
+use App\Models\SessionStep;
+use App\Models\TherapyType;
+use Illuminate\Http\Request;
+use App\Models\TherapySession;
+use App\Services\OpenRouterService;
+use App\Http\Controllers\Controller;
+
+class TherapySessionController extends Controller
+{
+    public function index()
+    {
+        $sessions = auth()->user()->therapySessions()->latest()->get();
+
+        return view('client.sessions.index', compact('sessions'));
+    }
+
+    public function create(TherapyType $therapyType)
+    {
+        $session = TherapySession::create([
+            'user_id' => auth()->id(),
+            'therapy_type_id' => $therapyType->id,
+            'status' => 'active',
+            'started_at' => now(),
+        ]);
+
+        $firstStep = $therapyType->steps()->orderBy('id')->first();
+
+        if ($firstStep) {
+            SessionStep::create([
+                'therapy_session_id' => $session->id,
+                'therapy_step_id' => $firstStep->id, // Используем ID из therapy_steps
+                'step_id' => $firstStep->step_id,
+                'is_step_start' => true,
+                'entered_at' => now(),
+            ]);
+        }
+
+        return redirect()->route('sessions.show', $session);
+    }
+    
+    public function show(TherapySession $session)
+    {
+
+        return view('client.sessions.show', compact('session'));
+    }
+}
+
+// app/Livewire/ChatSession.php
+<?php
+
+namespace App\Livewire;
+
+use Livewire\Component;
+use App\Models\SessionStep;
+use App\Models\TherapyStep;
+use App\Models\TherapySession;
+use App\Services\OpenRouterService;
+use Illuminate\Support\Facades\Log;
+
+class ChatSession extends Component
+{
+    public TherapySession $session;
+    public string $messageText = '';
+    public array $messages = [];
+
+    public function mount(TherapySession $session)
+    {
+        $this->session = $session;
+        $this->loadMessages();
+        if ($this->session->messages()->count() === 0 && $step = $this->session->currentStep) {
+            $this->showStepPrompt($step);
+        }
+    }
+
+    public function loadMessages()
+    {
+        $this->messages = $this->session->messages()
+            ->where('visible', true)
+            ->orderBy('created_at')
+            ->get()
+            ->toArray();
+    }
+
+    public function send()
+    {
+        if (trim($this->messageText) === '') return;
+
+        // Получаем текущий активный шаг
+        $currentSessionStep = $this->session->currentStep;
+        $userMessage = $this->messageText;
+
+        // Сохраняем сообщение пользователя
+        $this->session->messages()->create([
+            'role' => 'user',
+            'content' => $userMessage,
+            'visible' => true,
+        ]);
+
+        $this->messageText = '';
+        $this->loadMessages();
+
+        // Обработка в зависимости от типа шага
+        if ($currentSessionStep && $currentSessionStep->therapyStep) {
+            $stepType = $currentSessionStep->therapyStep->type;
+            
+            if ($stepType === 'question') {
+                // Обработка шага-вопроса
+                $this->processQuestionStep($currentSessionStep, $userMessage);
+            } else {
+
+                // Обработка AI-шага
+                $router = new OpenRouterService();
+                
+                // Для начала шага добавляем инструкции
+                $response = $router->sendMessage($this->session);
+
+                if ($currentSessionStep->is_step_start) {
+                    $currentSessionStep->update(['is_step_start' => false]);
+                }
+
+                if ($response['success']) {
+                    $this->handleAiResponse($response['content']);
+                }
+            }
+        }
+
+        $this->loadMessages();
+    }
+
+    protected function processQuestionStep(SessionStep $sessionStep, string $userAnswer)
+    {
+        $therapyStep = $sessionStep->therapyStep;
+        $transitionRules = $therapyStep->transition_rules;
+
+        // Определяем следующий шаг по умолчанию
+        $nextStepId = $transitionRules['default_next'] ?? null;
+
+        // Проверяем условия перехода
+        foreach ($transitionRules['conditions'] ?? [] as $condition) {
+            try {
+                // Простая проверка условия (реализация может быть сложнее)
+                if (str_contains($userAnswer, $condition['if'])) {
+                    $nextStepId = $condition['then'];
+                    break;
+                }
+            } catch (\Exception $e) {
+                // Логируем ошибки условий
+                logger()->error("Error processing condition: " . $e->getMessage());
+            }
+        }
+
+        // Переходим на следующий шаг
+        if ($nextStepId) {
+            $this->transitionToStep($nextStepId);
+        }
+    }
+
+    protected function transitionToStep(string $stepId)
+    {
+        if ($this->session->currentStep->step_id == $stepId)
+            return;
+
+        $nextStep = TherapyStep::where('step_id', $stepId)
+        ->where('therapy_type_id', $this->session->therapy_type_id)
+        ->first();
+
+        if ($nextStep) {
+            // Помечаем текущий шаг завершенным
+            if ($currentStep = $this->session->currentStep) {
+                $currentStep->update(['is_completed' => true]);
+            }
+
+            // Создаем новый шаг сессии
+            $step = SessionStep::create([
+                'therapy_session_id' => $this->session->id,
+                'therapy_step_id' => $nextStep->id, // Используем ID из therapy_steps
+                'step_id' => $nextStep->step_id,
+                'is_step_start' => true,
+                'entered_at' => now(),
+            ]);
+
+            $this->showStepPrompt($step);
+
+            // Если это AI-шаг, сразу обрабатываем начало
+            /*if ($nextStep->type === 'ai') {
+                $router = new OpenRouterService();
+                $response = $router->processStepStart($this->session);
+                Log::info('Ответ в ChatSession', $response);
+                if ($response['success']) {
+                    $this->handleAiResponse($response['content']);
+                    $this->loadMessages();
+                }
+            }*/
+        }
+    }
+
+
+    protected function handleAiResponse(array $data): void
+    {
+        if (!isset($data['user_message']) && isset($data['content'])) {
+            $decoded = json_decode($data['content'], true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $data = $decoded;
+            }
+        }
+
+        // 1. user_message ? чат
+        if (!empty($data['user_message'])) {
+            $this->session->messages()->create([
+                'role'    => 'assistant',
+                'content' => $data['user_message'],
+                'visible' => true,
+            ]);
+        }
+
+        // 3. collected_data ? сохраняем / мержим
+        if (!empty($data['collected_data'])) {
+            $merged = array_merge($this->session->collected_data ?? [], $data['collected_data']);
+            
+            $this->session->update(['collected_data' => $merged]);
+        }
+       
+
+        // 2. system_commands ? скрытое сообщение + обработка
+        if (!empty($data['system_commands'])) {
+            $this->session->messages()->create([
+                'role'    => 'assistant',
+                'content' => json_encode($data['system_commands']),
+                'visible' => false,
+            ]);
+
+            $this->processSystemCommands($data['system_commands']);
+        }
+    }
+
+
+
+    protected function processSystemCommands(array $commands)
+    {
+        if (isset($commands['next_step'])) {
+            $this->transitionToStep($commands['next_step']);
+        }
+
+        if (isset($commands['is_completed']) && $commands['is_completed'] === true) {
+            $this->session->update([
+                'status' => 'completed',
+                'finished_at' => now()
+            ]);
+            
+            // Помечаем текущий шаг завершенным
+            if ($currentStep = $this->session->currentStep) {
+                $currentStep->update(['is_completed' => true]);
+            }
+        }
+    }
+
+    protected function showStepPrompt(SessionStep $step): void
+    {
+
+        /* 1. System-prompt типа терапии - ВСЕГДА первым сообщением */
+        if ($this->session->messages()->count() === 0 && $this->session->therapyType?->system_prompt) {
+             // Сохраняем перый главный системный промпт
+            $this->session->messages()->create([
+                'role' => 'system',
+                'content' => $this->session->therapyType->system_prompt,
+                'visible' => false,
+            ]);
+
+        }
+
+        $currentSessionStep = $step;
+
+        /* 2. System-prompt шага - добавляется ТОЛЬКО при первом сообщении пользователя на шаге */
+        $needStepPrompt = $currentSessionStep?->is_step_start          // это первое сообщение на шаге
+                        && $currentSessionStep->therapyStep?->ai_instructions;
+
+        if ($needStepPrompt) {
+            // Сохраняем системный промпт шага
+            $this->session->messages()->create([
+                'role' => 'system',
+                'content' => $currentSessionStep->therapyStep->ai_instructions,
+                'visible' => false,
+            ]);
+
+        }
+
+
+        $prompt = $step->therapyStep->prompt;
+        if ($prompt) {
+            $this->session->messages()->create([
+                'role'    => 'assistant',
+                'content' => $prompt,
+                'visible' => true,
+            ]);
+            $this->loadMessages();
+        }
+
+        
+    }
+
+
+    public function render()
+    {
+        return view('livewire.chat-session');
+    }
+}
+
+// app/Models/TherapyType.php
+<?php
+
+namespace App\Models;
+
+use App\Models\TherapyStep;
+use Illuminate\Database\Eloquent\Model;
+
+class TherapyType extends Model
+{
+    protected $fillable = ['title', 'description', 'system_prompt', 'image_path'];
+    public function steps()
+    {
+        return $this->hasMany(TherapyStep::class);
+    }
+
+}
+
+// app/Models/TherapyStep.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class TherapyStep extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'therapy_type_id',
+        'step_id',
+        'type',
+        'prompt',
+        'ai_instructions',
+        'transition_rules',
+    ];
+
+    protected $casts = [
+        'transition_rules' => 'array',
+    ];
+
+    public function therapyType()
+    {
+        return $this->belongsTo(TherapyType::class);
+    }
+
+}
+
+// app/Models/User.php
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
+
+class User extends Authenticatable
+{
+    /** @use HasFactory<\Database\Factories\UserFactory> */
+    use HasFactory, Notifiable;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var list<string>
+     */
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+        'role', 
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+        ];
+    }
+
+    /**
+     * Get the user's initials
+     */
+    public function initials(): string
+    {
+        return Str::of($this->name)
+            ->explode(' ')
+            ->take(2)
+            ->map(fn ($word) => Str::substr($word, 0, 1))
+            ->implode('');
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    public function isTherapist(): bool
+    {
+        return $this->role === 'therapist';
+    }
+
+    public function isClient(): bool
+    {
+        return $this->role === 'client';
+    }
+
+    public function therapySessions()
+    {
+        return $this->hasMany(\App\Models\TherapySession::class);
+    }
+
+
+}
+
+// app/Models/TherapySession.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class TherapySession extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'therapy_type_id',
+        'status',
+        'started_at',
+        'finished_at',
+        'collected_data'
+    ];
+
+    protected $casts = [
+        'started_at' => 'datetime',
+        'finished_at' => 'datetime',
+        'collected_data' => 'array',
+    ];
+
+    // ?? Пользователь, прошедший сессию
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    // ?? Тип терапии
+    public function therapyType()
+    {
+        return $this->belongsTo(TherapyType::class);
+    }
+
+    // ?? Сообщения в сессии
+    public function messages()
+    {
+        return $this->hasMany(SessionMessage::class);
+    }
+
+    // ?? Шаги сессии
+    public function steps()
+    {
+        return $this->hasMany(SessionStep::class);
+    }
+
+    // ?? Текущий активный шаг
+    public function currentStep()
+    {
+    return $this->hasOne(SessionStep::class)->where('is_completed', false)->latestOfMany('entered_at');
+    }
+
+}
+
+// app/Models/SessionStep.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class SessionStep extends Model
+{
+    protected $fillable = [
+        'therapy_session_id',
+        'therapy_step_id', 
+        'step_id',
+        'is_step_start',
+        'is_completed',
+        'entered_at',
+    ];
+
+    protected $casts = [
+        'is_step_start' => 'boolean',
+        'entered_at' => 'datetime',
+        'is_completed' => 'boolean',
+    ];
+
+    // Связь с моделью TherapySession
+    public function therapySession()
+    {
+        return $this->belongsTo(TherapySession::class, 'therapy_session_id');
+    }
+
+    // Связь с моделью TherapyStep (если требуется)
+    public function therapyStep()
+    {
+        return $this->belongsTo(TherapyStep::class,'therapy_step_id');
+    }
+}
+
+// app/Models/SessionMessage.php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class SessionMessage extends Model
+{
+    protected $fillable = ['therapy_session_id','role','content','visible'];
+
+    public function session(){ return $this->belongsTo(TherapySession::class); }
+
+}
+
+// app/Services/OpenRouterService.php
+<?php 
+
+namespace App\Services;
+
+
+use App\Models\TherapySession;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+
+class OpenRouterService
+{
+    protected $apiUrl;
+    protected $apiKey;
+
+    public function __construct()
+    {
+        $this->apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
+        $this->apiKey = config('services.openrouter.token'); 
+    }
+
+    /**
+     * Отправляет сообщение в OpenRouter и получает ответ.
+     *
+     * @param TherapySession $session
+     * @param string $userInput
+     * @return array
+     */
+    public function sendMessage(TherapySession $session): array
+    {
+        $history = $this->buildMessageHistory($session);
+        return $this->sendToOpenRouter($history);
+    }
+
+
+    protected function isValidResponse(array $response): bool
+    {
+        // Проверяем наличие обязательных полей
+        return isset($response['user_message'], $response['system_commands']);
+    }
+
+    protected function normalizeResponseFormat(string $responseBody): array
+    {
+        // Пример функции для нормализации ответа
+        // Попробуем извлечь JSON даже если он поврежден
+        try {
+            $decoded = json_decode($responseBody, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $decoded;
+            }
+        } catch (\Exception $e) {
+            Log::error('Ошибка нормализации ответа', ['error' => $e->getMessage()]);
+        }
+        return [];
+    }
+
+
+    /**
+     * Формирует историю сообщений для отправки в OpenRouter.
+     *
+     * @param TherapySession $session
+     * @param string $userInput
+     * @return array
+     */
+
+    /**
+     * Формирует историю сообщений для отправки в OpenRouter.
+     *
+     * @param TherapySession $session
+     * @param string|null    $userInput  Текущее сообщение пользователя (может отсутствовать при старте шага)
+     * @return array
+     */
+
+    /**
+     * Строим историю для OpenRouter.
+     *
+     * Порядок:
+     * 1. System-prompt (роль ИИ)                     - therapy type
+     * 2. System-prompt конкретного шага (инструкции) - ai_instructions
+     * 3. Вся видимая история чата (assistant/user)   - включая prompt шага
+     * 4. Текущий ответ пользователя (если есть)
+     */
+    protected function buildMessageHistory(TherapySession $session): array
+    {
+        $history = [];
+
+        /* 3. Прошлая история (assistant/user + скрытые system-cmd если нужно) */
+        $past = $session->messages()
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn ($m) => [
+                'role'    => $m->role,
+                'content' => $m->content,
+            ])
+            ->toArray();
+
+        $history = array_merge($history, $past);
+
+        return $history;
+    }
+
+
+
+
+    /**
+     * Обрабатывает начало шага (добавляет инструкции шага)
+     */
+    public function processStepStart(TherapySession $session, ?string $userInput = null): array
+    {
+        $currentStep = $session->currentStep;
+        
+        if (!$currentStep || !$currentStep->therapyStep) {
+            return [
+                'success' => false,
+                'content' => 'Шаг не найден'
+            ];
+        }
+
+        $history = $this->buildMessageHistory($session, $userInput);
+        
+        // Добавляем инструкции шага
+        $history[] = [
+            'role' => 'system',
+            'content' => $currentStep->therapyStep->ai_instructions
+        ];
+
+        return $this->sendToOpenRouter($history);
+    }
+
+    /**
+     * Общий метод отправки в OpenRouter
+     */
+    protected function sendToOpenRouter(array $messages): array
+    {
+        $models = [
+            'deepseek/deepseek-chat-v3-0324:free',
+
+        ];
+
+        Log::info('История', $messages);
+
+        foreach ($models as $model) {
+            try {
+                $response = Http::withHeaders([
+                    'Authorization' => 'Bearer ' . $this->apiKey,
+                    'HTTP-Referer' => config('app.url'),
+                ])->post($this->apiUrl, [
+                    'model' => $model,
+                    'messages' => $messages,
+                    'response_format' => ['type' => 'json_object'],
+                ]);
+
+                if ($response->successful()) {
+                    $rawMessage = $this->extractJson($response->json());
+
+                    $payload = json_decode($rawMessage['content'] ?? '', true);
+
+                    Log::info('Ответ', $payload);
+                    return [
+                            'success' => true,
+                            'content' => $payload,
+                        ];
+                }
+            } catch (\Exception $e) {
+                Log::error("OpenRouter error with model $model", ['error' => $e->getMessage()]);
+            }
+        }
+
+        return [
+            'success' => false,
+            'content' => 'Все модели недоступны'
+        ];
+    }
+
+
+    protected function isValidPayload(?array $payload): bool
+    {
+        return $payload 
+            && isset($payload['user_message'], $payload['system_commands']);
+    }
+
+    /**
+     * Извлекает JSON из ответа OpenRouter.
+     *
+     * @param array $response
+     * @return array
+     */
+    public function extractJson(array $response): array
+    {
+        return $response['choices'][0]['message'] ?? [];
+    }
+}
+
+// resources/views/admin/therapy-types/create.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-xl mx-auto">
+        <h2 class="text-xl font-bold mb-4">Создать тип терапии</h2>
+@if ($errors->any())
+    <div class="mb-4 p-3 rounded bg-red-100 text-red-700">
+        <ul class="list-disc pl-5 text-sm">
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+        <form method="POST" action="{{ route('therapy-types.store') }}">
+            @csrf
+
+            <div class="mb-4">
+                <label class="block mb-1 font-medium">Название</label>
+                <input type="text" name="title" class="input w-full" required>
+            </div>
+
+            <div class="mb-4">
+                <label class="block mb-1 font-medium">Описание</label>
+                <textarea name="description" class="textarea w-full" rows="4"></textarea>
+            </div>
+
+            <div class="mb-4">
+                <label class="block mb-1 font-medium">System Prompt (роль ИИ)</label>
+                <textarea name="system_prompt" class="textarea w-full" rows="4"></textarea>
+            </div>
+
+            <div class="flex justify-end">
+                <button class="btn btn-primary">Сохранить</button>
+            </div>
+        </form>
+    </div>
+</x-layouts.app>
+
+// resources/views/admin/therapy-types/index.blade.php
+<x-layouts.app>
+    <div class="p-4">
+        <div class="flex justify-between mb-4">
+            <h2 class="text-xl font-bold">Терапевтические типы</h2>
+            <a href="{{ route('therapy-types.create') }}" class="btn btn-primary">+ Добавить</a>
+        </div>
+
+        <table class="table-auto w-full border">
+            <thead>
+                <tr>
+                    <th class="p-2 border">Название</th>
+                    <th class="p-2 border">Описание</th>
+                    <th class="p-2 border">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($types as $type)
+                    <tr>
+                        <td class="border p-2">{{ $type->title }}</td>
+                        <td class="border p-2">{{ Str::limit($type->description, 100) }}</td>
+                        <td class="border p-2">
+                            <div class="flex gap-2">
+                                <a href="{{ route('therapy-types.edit', $type) }}">
+                                    <flux:button size="sm">Редактировать</flux:button>
+                                </a>
+                                <a href="{{ route('therapy-types.steps.index', $type) }}">
+                                    <flux:button size="sm" variant="filled">Шаги</flux:button>
+                                </a>
+                                <form action="{{ route('therapy-types.destroy', $type) }}" method="POST" onsubmit="return confirm('Вы уверены, что хотите удалить этот тип терапии?');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <flux:button size="sm" variant="danger">Удалить</flux:button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+
+        <div class="mt-4">
+            {{ $types->links() }}
+        </div>
+    </div>
+</x-layouts.app>
+
+// resources/views/admin/therapy-types/edit.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-2xl mx-auto">
+        <flux:heading size="lg" class="mb-4">Редактировать тип терапии</flux:heading>
+@if ($errors->any())
+    <div class="mb-4 p-3 rounded bg-red-100 text-red-700">
+        <ul class="list-disc pl-5 text-sm">
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+        <form method="POST" action="{{ route('therapy-types.update', $therapyType) }}">
+            @csrf
+            @method('PUT')
+
+            <div class="mb-4">
+                <label class="block font-medium">Название</label>
+                <input type="text" name="title" class="input w-full" value="{{ $therapyType->title }}" required>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Описание</label>
+                <textarea name="description" class="textarea w-full" rows="3">{{ $therapyType->description }}</textarea>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">System Prompt (роль ИИ)</label>
+                <textarea name="system_prompt" class="textarea w-full" rows="4">{{ $therapyType->system_prompt }}</textarea>
+            </div>
+
+            <div class="flex justify-end">
+                <flux:button variant="primary" type="submit">Сохранить</flux:button>
+            </div>
+        </form>
+    </div>
+</x-layouts.app>
+
+// resources/views/admin/therapy-steps/create.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-2xl mx-auto">
+        <flux:heading size="lg" class="mb-4">Добавить шаг</flux:heading>
+@if ($errors->any())
+    <div class="mb-4 p-3 rounded bg-red-100 text-red-700">
+        <ul class="list-disc pl-5 text-sm">
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+        <form method="POST"
+            action="{{ route('therapy-types.steps.store', [
+                'therapy_type' => $therapyType->getRouteKey()
+            ]) }}">
+            @csrf
+
+            <div class="mb-4">
+                <label class="block font-medium">ID шага</label>
+                <input type="text" name="step_id" class="input w-full" required>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Тип шага</label>
+                <select name="type" class="input w-full">
+                    <option value="question">Вопрос</option>
+                    <option value="ai">AI</option>
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Текст вопроса / реплики</label>
+                <textarea name="prompt" class="textarea w-full" rows="3"></textarea>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Инструкции для ИИ</label>
+                <textarea name="ai_instructions" class="textarea w-full" rows="3"></textarea>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Transition rules (JSON)</label>
+                <textarea name="transition_rules" class="textarea w-full" rows="3" placeholder='{"default_next":"step_2"}'>{{ old('transition_rules', json_encode($therapyStep->transition_rules ?? [])) }}</textarea>
+            </div>
+
+            <div class="flex justify-end">
+                <flux:button variant="primary" type="submit">Сохранить</flux:button>
+            </div>
+        </form>
+    </div>
+</x-layouts.app>
+
+// resources/views/admin/therapy-steps/index.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-4xl mx-auto">
+        <flux:heading size="lg" class="mb-4">Шаги для терапии: {{ $therapyType->title }}</flux:heading>
+
+        <div class="flex justify-end mb-4">
+            <a href="{{ route('therapy-types.steps.create', $therapyType) }}">
+                <flux:button variant="primary">+ Добавить шаг</flux:button>
+            </a>
+        </div>
+
+        <div class="space-y-4">
+            @foreach($steps as $step)
+                <div class="border rounded-xl p-4 shadow-sm">
+                    <flux:heading level="4">{{ $step->step_id }} ({{ $step->type }})</flux:heading>
+                    <flux:text class="block mt-2 text-sm text-gray-700">{{ Str::limit($step->prompt, 100) }}</flux:text>
+
+                    <div class="mt-3 flex justify-end gap-2">
+                        <a href="{{ route('therapy-types.steps.edit', [
+                                'therapy_type' => $therapyType->getRouteKey(),
+                                'step'         => $step->getRouteKey(),
+                            ]) }}">
+                            <flux:button variant="filled">Редактировать</flux:button>
+                        </a>
+                        <form action="{{ route('therapy-types.steps.destroy', [$therapyType, $step]) }}" method="POST" onsubmit="return confirm('Вы уверены, что хотите удалить этот шаг?');">
+                            @csrf
+                            @method('DELETE')
+                            <flux:button variant="danger">Удалить</flux:button>
+                        </form>
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    </div>
+</x-layouts.app>
+
+// resources/views/admin/therapy-steps/edit.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-2xl mx-auto">
+        <flux:heading size="lg" class="mb-4">Редактировать шаг</flux:heading>
+@if ($errors->any())
+    <div class="mb-4 p-3 rounded bg-red-100 text-red-700">
+        <ul class="list-disc pl-5 text-sm">
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+        <form method="POST"
+            action="{{ route('therapy-types.steps.update', [
+                'therapy_type' => $therapyType->getRouteKey(),
+                'step'         => $therapyStep->getRouteKey(),
+            ]) }}">
+            @csrf
+            @method('PUT')
+
+            <div class="mb-4">
+                <label class="block font-medium">ID шага</label>
+                <input type="text" name="step_id" class="input w-full" value="{{ $therapyStep->step_id }}" required>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Тип шага</label>
+                <select name="type" class="input w-full" required>
+                    <option value="question" {{ $therapyStep->type === 'question' ? 'selected' : '' }}>Вопрос</option>
+                    <option value="ai" {{ $therapyStep->type === 'ai' ? 'selected' : '' }}>AI</option>
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Текст вопроса / реплики</label>
+                <textarea name="prompt" class="textarea w-full" rows="3">{{ $therapyStep->prompt }}</textarea>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Инструкции для ИИ</label>
+                <textarea name="ai_instructions" class="textarea w-full" rows="3">{{ $therapyStep->ai_instructions }}</textarea>
+            </div>
+
+            <div class="mb-4">
+                <label class="block font-medium">Transition rules (JSON)</label>
+                <textarea name="transition_rules" class="textarea w-full" rows="3">{{ old('transition_rules', json_encode($therapyStep->transition_rules ?? [])) }}</textarea>
+            </div>
+
+            <div class="flex justify-end">
+                <flux:button variant="primary" type="submit">Сохранить</flux:button>
+            </div>
+        </form>
+    </div>
+</x-layouts.app>
+
+// resources/views/client/therapy-types/index.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-3xl mx-auto">
+        <flux:heading size="lg" class="mb-4">Доступные типы терапий</flux:heading>
+
+        <div class="space-y-4">
+            @foreach ($types as $type)
+                <div class="border p-4 rounded-xl shadow-sm">
+                    <flux:heading level="4">{{ $type->title }}</flux:heading>
+                    <flux:text class="text-sm text-gray-600">{{ Str::limit($type->description, 150) }}</flux:text>
+                    <div class="mt-2">
+                        <a href="{{ route('sessions.create', $type) }}">
+                            <flux:button variant="filled">Начать сессию</flux:button>
+                        </a>
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    </div>
+</x-layouts.app>
+
+// resources/views/client/sessions/show.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-2xl mx-auto">
+        <flux:heading size="lg" class="mb-4">Сессия: {{ $session->therapyType->title }}</flux:heading>
+
+        @livewire('chat-session', ['session' => $session])
+    </div>
+</x-layouts.app>
+
+// resources/views/client/sessions/index.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-3xl mx-auto">
+        <flux:heading size="lg" class="mb-4">Мои сессии</flux:heading>
+
+        @foreach ($sessions as $session)
+            <div class="border p-4 rounded-xl shadow-sm mb-4">
+                <flux:heading level="4">{{ $session->therapyType->title }}</flux:heading>
+                <flux:text class="text-sm text-gray-600">Статус: {{ $session->status }}</flux:text>
+                <div class="mt-2">
+                    <a href="{{ route('sessions.show', $session) }}">
+                        <flux:button variant="filled">Открыть</flux:button>
+                    </a>
+                </div>
+            </div>
+        @endforeach
+    </div>
+</x-layouts.app>
+
+// resources/views/components/layouts/app/sidebar.blade.php
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
+    <head>
+        @include('partials.head')
+    </head>
+    <body class="min-h-screen bg-white dark:bg-zinc-800">
+        <flux:sidebar sticky stashable class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:sidebar.toggle class="lg:hidden" icon="x-mark" />
+
+            <a href="{{ route('dashboard') }}" class="me-5 flex items-center space-x-2 rtl:space-x-reverse" wire:navigate>
+                <x-app-logo />
+            </a>
+
+            <flux:navlist variant="outline">
+                <flux:navlist.group :heading="__('Platform')" class="grid">
+                    <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>{{ __('Dashboard') }}</flux:navlist.item>
+                </flux:navlist.group>
+            </flux:navlist>
+
+            <flux:spacer />
+
+            <flux:navlist variant="outline">
+                <flux:navlist.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
+                {{ __('Repository') }}
+                </flux:navlist.item>
+
+                <flux:navlist.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
+                {{ __('Documentation') }}
+                </flux:navlist.item>
+            </flux:navlist>
+
+            <!-- Desktop User Menu -->
+            <flux:dropdown class="hidden lg:block" position="bottom" align="start">
+                <flux:profile
+                    :name="auth()->user()->name"
+                    :initials="auth()->user()->initials()"
+                    icon:trailing="chevrons-up-down"
+                />
+
+                <flux:menu class="w-[220px]">
+                    <flux:menu.radio.group>
+                        <div class="p-0 text-sm font-normal">
+                            <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
+                                <span class="relative flex h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+                                    <span
+                                        class="flex h-full w-full items-center justify-center rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white"
+                                    >
+                                        {{ auth()->user()->initials() }}
+                                    </span>
+                                </span>
+
+                                <div class="grid flex-1 text-start text-sm leading-tight">
+                                    <span class="truncate font-semibold">{{ auth()->user()->name }}</span>
+                                    <span class="truncate text-xs">{{ auth()->user()->email }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </flux:menu.radio.group>
+
+                    <flux:menu.separator />
+
+                    <flux:menu.radio.group>
+                        <flux:menu.item :href="route('settings.profile')" icon="cog" wire:navigate>{{ __('Settings') }}</flux:menu.item>
+                    </flux:menu.radio.group>
+
+                    <flux:menu.separator />
+
+                    <form method="POST" action="{{ route('logout') }}" class="w-full">
+                        @csrf
+                        <flux:menu.item as="button" type="submit" icon="arrow-right-start-on-rectangle" class="w-full">
+                            {{ __('Log Out') }}
+                        </flux:menu.item>
+                    </form>
+                </flux:menu>
+            </flux:dropdown>
+        </flux:sidebar>
+
+        <!-- Mobile User Menu -->
+        <flux:header class="lg:hidden">
+            <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
+
+            <flux:spacer />
+
+            <flux:dropdown position="top" align="end">
+                <flux:profile
+                    :initials="auth()->user()->initials()"
+                    icon-trailing="chevron-down"
+                />
+
+                <flux:menu>
+                    <flux:menu.radio.group>
+                        <div class="p-0 text-sm font-normal">
+                            <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
+                                <span class="relative flex h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+                                    <span
+                                        class="flex h-full w-full items-center justify-center rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white"
+                                    >
+                                        {{ auth()->user()->initials() }}
+                                    </span>
+                                </span>
+
+                                <div class="grid flex-1 text-start text-sm leading-tight">
+                                    <span class="truncate font-semibold">{{ auth()->user()->name }}</span>
+                                    <span class="truncate text-xs">{{ auth()->user()->email }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </flux:menu.radio.group>
+
+                    <flux:menu.separator />
+
+                    <flux:menu.radio.group>
+                        <flux:menu.item :href="route('settings.profile')" icon="cog" wire:navigate>{{ __('Settings') }}</flux:menu.item>
+                    </flux:menu.radio.group>
+
+                    <flux:menu.separator />
+
+                    <form method="POST" action="{{ route('logout') }}" class="w-full">
+                        @csrf
+                        <flux:menu.item as="button" type="submit" icon="arrow-right-start-on-rectangle" class="w-full">
+                            {{ __('Log Out') }}
+                        </flux:menu.item>
+                    </form>
+                </flux:menu>
+            </flux:dropdown>
+        </flux:header>
+
+        {{ $slot }}
+
+        @fluxScripts
+    </body>
+</html>
+
+// resources/views/components/layouts/app.blade.php
+<x-layouts.app.sidebar :title="$title ?? null">
+    <flux:main>
+        {{ $slot }}
+    </flux:main>
+</x-layouts.app.sidebar>
+
+// resources/views/livewire/chat-session.blade.php
+<div class="space-y-4">
+    <div class="space-y-2">
+        @foreach($messages as $msg)
+            <div class="p-2 rounded-md @if($msg['role'] === 'user') bg-blue-100 text-right @else bg-gray-100 text-left @endif">
+                <flux:text>{{ $msg['content'] }}</flux:text>
+            </div>
+        @endforeach
+    </div>
+
+    <form wire:submit.prevent="send" class="flex gap-2 mt-4">
+        <input wire:model.defer="messageText" class="input w-full" placeholder="Введите сообщение..." />
+        <flux:button variant="primary" type="submit">Отправить</flux:button>
+    </form>
+</div>
+
+// resources/views/sessions/show.blade.php
+<x-layouts.app>
+    <div class="p-4 max-w-2xl mx-auto">
+        <flux:heading size="lg" class="mb-4">Сессия: {{ $session->therapyType->title }}</flux:heading>
+        @livewire('chat-session', ['session' => $session])
+    </div>
+</x-layouts.app>
+
